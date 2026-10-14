@@ -1,0 +1,15 @@
+# Project Rules & Tracking
+**Project Scope:** A free, web-based, real-time multiplayer jigsaw puzzle game built for cooperative competition featuring a lobby, friends system, active canvas gameplay, and post-game analytics[cite: 20].
+
+## Architectural Setup Progress
+- [x] Create `/engine` folder for custom canvas physics and image slicing[cite: 20].
+- [x] Create `/server` folder for Node.js backend (Socket.io) handling state, lobbies, and host migration[cite: 20].
+- [x] Create `/frontend` folder for React app[cite: 20].
+- [x] Initialize React 18 in `/frontend`[cite: 20].
+- [x] Initialize Node.js & Socket.io in `/server`[cite: 20].
+
+## Coding Standards
+*   **Strict Decoupling:** Maintain strict separation between the custom render engine, React interface, and backend[cite: 20].
+*   **NO Inline CSS:** Do not use `style={{...}}`.
+*   **State-Specific CSS:** Modularize CSS into `lobby.css`, `playing.css`, `pause.css`, and `gameover.css`.
+*   **Banned Patterns:** DO NOT use pre-built 2D game engines (Headbreaker, Phaser). DO NOT use DOM-based puzzle pieces (must use `<canvas>`). NO rigid grids; use true interlocking shapes.

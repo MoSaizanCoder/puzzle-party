@@ -1,0 +1,74 @@
+/* /frontend/styles/pause.css */
+.pause-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(26, 35, 58, 0.6); /* Navy tint for focus */
+  backdrop-filter: blur(5px);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.trivia-box {
+  width: min(560px, calc(100vw - 40px));
+  background: var(--bg-peach);
+  padding: 2rem;
+  text-align: center;
+  border-radius: 12px;
+  border: 2px solid var(--text-plum);
+  box-shadow: 0 14px 42px rgba(26, 35, 58, 0.24);
+}
+
+.trivia-eyebrow {
+  margin: 0 0 8px;
+  color: var(--text-plum);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.trivia-question {
+  margin: 18px 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.trivia-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trivia-options button {
+  min-height: 48px;
+  padding: 10px;
+  color: var(--text-navy);
+  background: rgba(253, 251, 247, 0.8);
+  border: 1px solid rgba(74, 44, 64, 0.28);
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trivia-options button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.trivia-feedback {
+  min-height: 1em;
+  margin: 14px 0 0;
+}
+
+@media (max-width: 480px) {
+  .trivia-box {
+    padding: 1.25rem;
+  }
+
+  .trivia-options {
+    grid-template-columns: 1fr;
+  }
+}

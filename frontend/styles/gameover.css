@@ -1,0 +1,143 @@
+/* /frontend/styles/gameover.css */
+.gameover-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: linear-gradient(to bottom, var(--bg-mint), var(--bg-creamy));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.gameover-content {
+  width: min(640px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.final-scoreboard {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0;
+  padding: 16px;
+  list-style: none;
+  background: rgba(253, 251, 247, 0.76);
+  border: 1px solid rgba(26, 35, 58, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(26, 35, 58, 0.12);
+}
+
+.final-scoreboard li {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.final-player-heading {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.final-player-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.winner-highlight {
+  background: var(--bg-lavender);
+  font-weight: bold;
+  outline: 2px solid var(--text-plum);
+}
+
+.final-player-rank {
+  color: var(--text-plum);
+  font-weight: 700;
+}
+
+.final-player-score {
+  font-variant-numeric: tabular-nums;
+}
+
+.performance-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)); /* Changed from 3 to 4 */
+  gap: 8px;
+  padding-left: 44px;
+}
+
+.performance-stat {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(26, 35, 58, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.performance-stat span {
+  color: var(--text-plum);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.performance-stat strong {
+  color: var(--text-navy);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-again-button {
+  min-height: 44px;
+  padding: 10px 22px;
+  color: var(--text-navy);
+  background: var(--bg-peach);
+  border: 1px solid rgba(26, 35, 58, 0.2);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.play-again-button:not(:disabled):hover {
+  background: #ffd8c7;
+  box-shadow: 0 5px 14px rgba(26, 35, 58, 0.14);
+  transform: translateY(-1px);
+}
+
+.play-again-button:not(:disabled):active {
+  box-shadow: none;
+  transform: translateY(0);
+}
+
+.play-again-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Scroll to the bottom of the file to update the mobile view: */
+@media (max-width: 480px) {
+  .final-scoreboard {
+    padding: 10px;
+  }
+
+  .performance-stats {
+    padding-left: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); /* Makes a 2x2 square on mobile */
+  }
+
+  .performance-stat {
+    padding: 8px 6px;
+  }
+
+  .performance-stat span {
+    font-size: 0.62rem;
+  }
+}
