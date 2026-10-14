@@ -12,6 +12,9 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
   useEffect(() => {
     let isMounted = true;
 
+    // --- NEW: Do not request hardware until they pass the Auth screen ---
+    if (!socket) return; 
+
     if (isMicMuted) {
       // Completely stop the hardware tracks to kill the browser recording light
       if (localStream.current) {
@@ -66,7 +69,7 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     return () => {
       isMounted = false;
     };
-  }, [isMicMuted]);
+  }, [isMicMuted, socket]);
 
   // 3. WebRTC Signaling Logic
   useEffect(() => {
