@@ -86,13 +86,21 @@ export default function App() {
       setGameState(state);
     };
 
+    // --- NEW: HANDLE LOBBY ERRORS ---
+    const handleLobbyError = ({ message }) => {
+      alert(`Connection Error: ${message}`);
+      nextSocket.disconnect(); 
+    };
+
     nextSocket.on('connect', handleConnect);
     nextSocket.on('game_state', handleGameState);
+    nextSocket.on('lobby_error', handleLobbyError); 
     setSocket(nextSocket);
 
     return () => {
       nextSocket.off('connect', handleConnect);
       nextSocket.off('game_state', handleGameState);
+      nextSocket.off('lobby_error', handleLobbyError); 
       nextSocket.disconnect();
       setSocket(null);
     };

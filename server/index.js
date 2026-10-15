@@ -223,7 +223,15 @@ const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN ??
 io.on('connection', (socket) => {
   socket.on('join_game', async ({ playerId, name, roomId } = {}) => {
     if (typeof playerId !== 'string' || !roomId) return;
-    
+
+    // --- NEW: MULTI-TAB & DUPLICATE LOGIN PREVENTION ---
+    // Check if any active websockets are already using this Player ID
+    const existingSockets = await io.in(playerId).fetchSockets();
+    if (existingSockets.length > 0) {
+      socket.emit('lobby_error', { message: 'Account is already playing in another tab or device.' });
+      return;
+    }
+
     socket.data.playerId = playerId;
     socket.data.roomId = roomId;
     socket.join(playerId); // Critical for WebRTC targeted signaling
