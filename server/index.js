@@ -249,11 +249,10 @@ io.on('connection', (socket) => {
     // --- NEW: FETCH DB STATS, FRIENDS & PROFILE ---
     let dbStats = null;
     let dbFriends = [];
+    let dbPendingRequests = [];
     let dbProfile = null;
     
-    // Guests have short IDs, Supabase users have long UUIDs (>20 chars)
     if (supabase && playerId.length > 20) { 
-      // 1. Fetch or Create Profile (Trigger handles short_id generation)
       let { data: profileData } = await supabase.from('profiles').select('*').eq('id', playerId).single();
       if (!profileData) {
         const { data: newProfile } = await supabase.from('profiles').insert({ id: playerId, display_name: name }).select('*').single();
@@ -261,19 +260,32 @@ io.on('connection', (socket) => {
       }
       dbProfile = profileData;
 
-      // 2. Fetch lifetime stats
       const { data: statsData } = await supabase.from('stats').select('*').eq('user_id', playerId).single();
       dbStats = statsData;
 
-      // 3. Fetch permanent friends
-      const { data: friendsData } = await supabase
+      // Fetch ALL friendships (Accepted AND Pending Inbound)
+      const { data: friendshipsData } = await supabase
         .from('friendships')
         .select('*')
-        .or(`user_id_1.eq.${playerId},user_id_2.eq.${playerId}`)
-        .eq('status', 'accepted');
+        .or(`user_id_1.eq.${playerId},user_id_2.eq.${playerId}`);
 
-      if (friendsData) {
-        dbFriends = friendsData.map(f => f.user_id_1 === playerId ? f.user_id_2 : f.user_id_1);
+      if (friendshipsData && friendshipsData.length > 0) {
+        const uniqueIds = [...new Set(friendshipsData.map(f => f.user_id_1 === playerId ? f.user_id_2 : f.user_id_1))];
+        const { data: profiles } = await supabase.from('profiles').select('id, display_name, short_id').in('id', uniqueIds);
+        
+        if (profiles) {
+          const profileMap = Object.fromEntries(profiles.map(p => [p.id, { id: p.id, name: p.display_name, shortId: p.short_id }]));
+          
+          dbFriends = friendshipsData
+            .filter(f => f.status === 'accepted')
+            .map(f => profileMap[f.user_id_1 === playerId ? f.user_id_2 : f.user_id_1])
+            .filter(Boolean);
+            
+          dbPendingRequests = friendshipsData
+            .filter(f => f.status === 'pending' && f.user_id_2 === playerId) // Only inbound requests
+            .map(f => profileMap[f.user_id_1])
+            .filter(Boolean);
+        }
       }
     }
 
@@ -281,11 +293,12 @@ io.on('connection', (socket) => {
 
     state.players[playerId] ??= {
       id: playerId,
-      shortId: dbProfile?.short_id || playerId, // Give guests their short GUEST-XXXX id
+      shortId: dbProfile?.short_id || playerId,
       name: finalName,
       isReady: false,
       isPlaying: false,
       friendsList: dbFriends, 
+      pendingRequests: dbPendingRequests, // <-- Added pending requests array
       score: 0,
       streak: 0,
       inventory: [],
@@ -389,40 +402,46 @@ io.on('connection', (socket) => {
     broadcastGameState(socket.data.roomId);
   });
 
-  socket.on('add_friend', async ({ targetPlayerId } = {}, callback) => {
+  socket.on('send_friend_request', async ({ targetPlayerId } = {}, callback) => {
     const player = getPlayer(socket);
-    const state = getGameState(socket);
+    if (!player || !supabase || player.id.length <= 20) return;
     
-    if (!player || !state) {
-      acknowledge(callback, { ok: false, message: 'Join the lobby before adding friends.' });
-      return;
-    }
-    if (typeof targetPlayerId !== 'string' || !targetPlayerId.trim()) {
-      acknowledge(callback, { ok: false, message: 'Provide a valid friend ID.' });
-      return;
-    }
+    const targetId = targetPlayerId?.trim();
+    if (!targetId || targetId === player.id) return;
 
-    const normalizedTargetId = targetPlayerId.trim();
-    if (normalizedTargetId === player.id) {
-      acknowledge(callback, { ok: false, message: 'You cannot add yourself.' });
+    // Check if already friends or pending
+    const existing = await supabase.from('friendships').select('id').or(`and(user_id_1.eq.${player.id},user_id_2.eq.${targetId}),and(user_id_1.eq.${targetId},user_id_2.eq.${player.id})`).single();
+    if (existing.data) {
+      acknowledge(callback, { ok: false, message: 'Request already exists or you are already friends.' });
       return;
     }
 
-    if (!player.friendsList.includes(normalizedTargetId)) {
-      // 1. Update active server RAM
-      player.friendsList.push(normalizedTargetId);
+    const { error } = await supabase.from('friendships').insert({ user_id_1: player.id, user_id_2: targetId, status: 'pending' });
+    if (!error) {
+      // Instantly alert the target player in their active socket room
+      io.to(targetId).emit('friend_request_received', { id: player.id, name: player.name, shortId: player.shortId });
+    }
+    acknowledge(callback, { ok: !error });
+  });
 
-      // 2. Save permanently to Supabase (if both are real accounts, not guests)
-      if (supabase && player.id.length > 20 && normalizedTargetId.length > 20) {
-        await supabase.from('friendships').insert({
-          user_id_1: player.id,
-          user_id_2: normalizedTargetId,
-          status: 'accepted'
-        });
+  socket.on('resolve_friend_request', async ({ requesterId, accept } = {}, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !supabase) return;
+
+    if (accept) {
+      await supabase.from('friendships').update({ status: 'accepted' }).match({ user_id_1: requesterId, user_id_2: player.id });
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', requesterId).single();
+      if (profile) {
+        player.friendsList.push({ id: profile.id, name: profile.display_name, shortId: profile.short_id });
       }
+    } else {
+      await supabase.from('friendships').delete().match({ user_id_1: requesterId, user_id_2: player.id });
     }
 
-    acknowledge(callback, { ok: true, friendsList: player.friendsList });
+    // Clear from RAM
+    player.pendingRequests = (player.pendingRequests || []).filter(req => req.id !== requesterId);
+    
+    acknowledge(callback, { ok: true });
     broadcastGameState(socket.data.roomId);
   });
 
