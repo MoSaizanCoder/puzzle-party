@@ -63,13 +63,23 @@ export default function App() {
   const authId = session?.user?.id; // Extract a stable ID
 
   useEffect(() => {
-    if (!authId && !isGuest) return; // Wait until they log in or click Guest
+    if (!authId && !isGuest) return; 
+
+    // --- NEW: URL-Based Match Provisioning ---
+    const searchParams = new URLSearchParams(window.location.search);
+    let roomId = searchParams.get('room');
+    if (!roomId) {
+      // Dynamic room key generation upon host initialization
+      roomId = Math.random().toString(36).substring(2, 8); 
+      window.history.replaceState(null, '', `?room=${roomId}`);
+    }
 
     const { id: playerId, name } = getPlayerIdentity(session);
     const nextSocket = io(import.meta.env.VITE_SERVER_URL ?? window.location.origin, { autoConnect: true });
 
     const handleConnect = () => {
-      nextSocket.emit('join_game', { playerId, name });
+      // Parse explicit route metadata to the backend
+      nextSocket.emit('join_game', { playerId, name, roomId });
     };
 
     const handleGameState = (state) => {
