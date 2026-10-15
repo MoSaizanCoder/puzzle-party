@@ -445,6 +445,32 @@ io.on('connection', (socket) => {
     broadcastGameState(socket.data.roomId);
   });
 
+  socket.on('remove_friend', async ({ friendId } = {}, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !supabase || !friendId) return;
+
+    // 1. Delete from Supabase
+    await supabase.from('friendships').delete()
+      .or(`and(user_id_1.eq.${player.id},user_id_2.eq.${friendId}),and(user_id_1.eq.${friendId},user_id_2.eq.${player.id})`);
+
+    // 2. Remove from active server memory
+    player.friendsList = player.friendsList.filter(f => f.id !== friendId);
+    
+    acknowledge(callback, { ok: true, friendsList: player.friendsList });
+    broadcastGameState(socket.data.roomId);
+  });
+
+  socket.on('get_friend_stats', async ({ friendId } = {}, callback) => {
+    if (!supabase || !friendId) {
+      acknowledge(callback, { ok: false, message: 'Invalid request' });
+      return;
+    }
+    
+    // Fetch read-only stats for the requested friend
+    const { data: stats } = await supabase.from('stats').select('*').eq('user_id', friendId).single();
+    acknowledge(callback, { ok: true, stats: stats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 } });
+  });
+
   socket.on('dev_reset_game', () => {
     const player = getPlayer(socket); const state = getGameState(socket);
     if (!player || !state || state.hostId !== player.id) return;

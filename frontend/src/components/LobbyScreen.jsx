@@ -28,6 +28,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
 
+  // --- NEW: FRIEND STATS MODAL STATE ---
+  const [viewingFriendStats, setViewingFriendStats] = useState(null);
+
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
   const hostId = gameState?.hostId ?? null;
@@ -37,13 +40,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const canStartGame = Boolean(gameState?.puzzleImageSrc) && nonHostPlayers.every((player) => player.isReady === true);
 
   const fileInputRef = useRef(null);
-  
-  // --- REAL-TIME PENDING REQUESTS STATE ---
   const [localPending, setLocalPending] = useState([]);
   
-  useEffect(() => {
-    if (localPlayer?.pendingRequests) setLocalPending(localPlayer.pendingRequests);
-  }, [localPlayer?.pendingRequests]);
+  useEffect(() => { if (localPlayer?.pendingRequests) setLocalPending(localPlayer.pendingRequests); }, [localPlayer?.pendingRequests]);
 
   useEffect(() => {
     if (!socket) return;
@@ -107,6 +106,25 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
     setLocalPending(prev => prev.filter(req => req.id !== requesterId));
   };
 
+  // --- NEW: REMOVE & VIEW STATS ACTIONS ---
+  const handleRemoveFriend = (friendId) => {
+    if (!socket?.connected) return;
+    if (window.confirm("Are you sure you want to remove this friend?")) {
+      socket.emit('remove_friend', { friendId });
+    }
+  };
+
+  const handleViewStats = (friendObj) => {
+    if (!socket?.connected) return;
+    socket.emit('get_friend_stats', { friendId: friendObj.id }, (result) => {
+      if (result.ok) {
+        setViewingFriendStats({ name: friendObj.name, shortId: friendObj.shortId, stats: result.stats });
+      } else {
+        alert('Could not load stats for this player.');
+      }
+    });
+  };
+
   return (
     <main className="lobby-screen">
       <section className="glass-panel lobby-panel" aria-labelledby="lobby-title">
@@ -166,6 +184,37 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         </div>
       </section>
 
+      {/* FRIEND STATS MODAL (Read Only) */}
+      {viewingFriendStats && (
+        <div className="modal-overlay" style={{ zIndex: 200 }} onClick={() => setViewingFriendStats(null)}>
+          <section className="modal-content glass-panel" onClick={(e) => e.stopPropagation()} style={{ padding: '24px' }}>
+            <div className="lobby-modal-header" style={{ marginBottom: '16px' }}>
+              <h2 id="lobby-modal-title" style={{ color: 'var(--text-plum)' }}>{viewingFriendStats.name}'s Stats</h2>
+              <button type="button" className="close-modal" onClick={() => setViewingFriendStats(null)}>×</button>
+            </div>
+            
+            <div className="stats-modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <span className="profile-label">Games Played</span>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-navy)' }}>{viewingFriendStats.stats.games_played || 0}</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <span className="profile-label">Total Wins</span>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--shield-green)' }}>{viewingFriendStats.stats.total_wins || 0}</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <span className="profile-label">Highest Streak</span>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-navy)' }}>{viewingFriendStats.stats.highest_streak || 0}</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <span className="profile-label">Attacks Used</span>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--mute-red)' }}>{viewingFriendStats.stats.attacks_used || 0}</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {isMenuOpen && (
         <div className="modal-overlay" onClick={() => setIsMenuOpen(false)}>
           <section className="modal-content glass-panel" onClick={(event) => event.stopPropagation()} style={{ padding: '24px 24px 32px' }}>
@@ -210,7 +259,6 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
 
             {activeTab === 'friends' && (
               <div className="friends-modal-body">
-                {/* PENDING REQUESTS UI */}
                 {localPending.length > 0 && (
                   <div className="pending-requests-section" style={{ marginBottom: '20px' }}>
                     <h3 style={{ marginBottom: '8px', color: 'var(--text-plum)' }}>Pending Requests</h3>
@@ -272,9 +320,21 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                       {(localPlayer?.friendsList ?? []).map((friendObj) => {
                         const lobbyPlayer = players.find((p) => p.id === friendObj.id);
                         return (
-                          <li key={friendObj.id}>
-                            <span>{lobbyPlayer?.name ?? friendObj.name} <small style={{ color: 'var(--text-plum)', marginLeft: '6px' }}>#{friendObj.shortId}</small></span>
-                            <span className={`friend-presence${lobbyPlayer ? ' is-online' : ''}`}>{lobbyPlayer ? 'In lobby' : 'Offline'}</span>
+                          <li key={friendObj.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <span>{lobbyPlayer?.name ?? friendObj.name} <small style={{ color: 'var(--text-plum)', marginLeft: '6px' }}>#{friendObj.shortId}</small></span>
+                              <div className={`friend-presence${lobbyPlayer ? ' is-online' : ''}`} style={{ fontSize: '0.7rem', marginTop: '2px' }}>
+                                {lobbyPlayer ? 'In lobby' : 'Offline'}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>
+                                Stats
+                              </button>
+                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fee2e2', color: '#991b1b' }} onClick={() => handleRemoveFriend(friendObj.id)}>
+                                Remove
+                              </button>
+                            </div>
                           </li>
                         );
                       })}
