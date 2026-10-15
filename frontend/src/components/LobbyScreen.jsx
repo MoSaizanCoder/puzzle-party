@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient.js';
 import '../../styles/lobby.css';
 
@@ -24,10 +24,13 @@ function VoiceControl({ icon, label, muted, interactive, onToggle }) {
 
 export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [showImageModal, setShowImageModal] = useState(false);
-  const [activeModal, setActiveModal] = useState(null);
   const [playerIdCopied, setPlayerIdCopied] = useState(false);
 
-  // --- NEW: SEARCH & EDIT STATES ---
+  // --- MENU STATES ---
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('profile'); // 'profile', 'friends', 'stats'
+
+  // --- SEARCH & EDIT STATES ---
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -69,7 +72,6 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
     } catch {}
   };
 
-  // --- NEW: SEARCH, EDIT & ADD FRIENDS ---
   const handleUpdateName = (e) => {
     e.preventDefault();
     if (!socket?.connected || !editNameValue.trim()) return;
@@ -110,8 +112,15 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                 <h1 id="lobby-title">Puzzle Party</h1>
               </div>
               <div className="lobby-header-icons">
-                <button type="button" className="lobby-icon-button" aria-label="Profile" onClick={() => setActiveModal('profile')}>👤</button>
-                <button type="button" className="lobby-icon-button" aria-label="Friends" onClick={() => setActiveModal('friends')}>👥</button>
+                <button 
+                  type="button" 
+                  className="lobby-icon-button" 
+                  aria-label="Menu" 
+                  title="Menu"
+                  onClick={() => setIsMenuOpen(true)}
+                >
+                  ☰
+                </button>
                 <VoiceControl icon="🎙" label="Microphone" muted={localPlayer?.isMicMuted ?? false} interactive={true} onToggle={() => updateVoiceState('isMicMuted')} />
                 <VoiceControl icon="🔊" label="Speaker" muted={localPlayer?.isSpeakerMuted ?? false} interactive={true} onToggle={() => updateVoiceState('isSpeakerMuted')} />
               </div>
@@ -166,16 +175,42 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         </div>
       </section>
 
-      {/* --- MODALS --- */}
-      {activeModal && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <section className="modal-content glass-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="lobby-modal-header">
-              <h2 id="lobby-modal-title">{activeModal === 'profile' ? 'Your Profile' : 'Friends'}</h2>
-              <button type="button" className="close-modal" onClick={() => setActiveModal(null)}>×</button>
+      {/* --- UNIFIED MENU MODAL --- */}
+      {isMenuOpen && (
+        <div className="modal-overlay" onClick={() => setIsMenuOpen(false)}>
+          <section className="modal-content glass-panel" onClick={(event) => event.stopPropagation()} style={{ padding: '24px 24px 32px' }}>
+            <div className="lobby-modal-header" style={{ marginBottom: '16px' }}>
+              <h2 id="lobby-modal-title">Game Menu</h2>
+              <button type="button" className="close-modal" onClick={() => setIsMenuOpen(false)}>×</button>
             </div>
 
-            {activeModal === 'profile' ? (
+            {/* TAB NAVIGATION */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid rgba(26, 35, 58, 0.1)', paddingBottom: '16px' }}>
+              <button 
+                className={activeTab === 'profile' ? 'primary-button' : 'secondary-button'} 
+                onClick={() => setActiveTab('profile')} 
+                style={{ flex: 1, padding: '8px' }}
+              >
+                Profile
+              </button>
+              <button 
+                className={activeTab === 'friends' ? 'primary-button' : 'secondary-button'} 
+                onClick={() => setActiveTab('friends')} 
+                style={{ flex: 1, padding: '8px' }}
+              >
+                Friends
+              </button>
+              <button 
+                className={activeTab === 'stats' ? 'primary-button' : 'secondary-button'} 
+                onClick={() => setActiveTab('stats')} 
+                style={{ flex: 1, padding: '8px' }}
+              >
+                Stats
+              </button>
+            </div>
+
+            {/* TAB CONTENT */}
+            {activeTab === 'profile' && (
               <div className="profile-modal-body">
                 <div className="profile-modal-name">
                   <span className="profile-label">Player Name</span>
@@ -214,7 +249,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   Sign Out
                 </button>
               </div>
-            ) : (
+            )}
+
+            {activeTab === 'friends' && (
               <div className="friends-modal-body">
                 <div className="friend-form">
                   <label htmlFor="friend-search">Find Friends</label>
@@ -268,7 +305,6 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                     <ul className="friends-list">
                       {(localPlayer?.friendsList ?? []).map((friendIdEntry) => {
                         const friend = players.find((p) => p.id === friendIdEntry);
-                        // If they are in the lobby, we have their name. If they are offline, we just show a generic "Offline Friend" for now (we'll fetch their name from DB in the next step!)
                         return (
                           <li key={friendIdEntry}>
                             <span>{friend?.name ?? "Offline Friend"}</span>
@@ -282,6 +318,41 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   ) : (
                     <p className="friends-empty-state">No friends added yet.</p>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'stats' && (
+              <div className="stats-modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                  <span className="profile-label">Games Played</span>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--text-navy)' }}>
+                    {localPlayer?.lifetimeStats?.games_played || 0}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                  <span className="profile-label">Total Wins</span>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--shield-green)' }}>
+                    {localPlayer?.lifetimeStats?.total_wins || 0}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                  <span className="profile-label">Highest Streak</span>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--text-navy)' }}>
+                    {localPlayer?.lifetimeStats?.highest_streak || 0}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                  <span className="profile-label">Attacks Used</span>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--mute-red)' }}>
+                    {localPlayer?.lifetimeStats?.attacks_used || 0}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.5)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(26,35,58,0.08)', gridColumn: 'span 2' }}>
+                  <span className="profile-label">Points Stolen</span>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--text-plum)' }}>
+                    {localPlayer?.lifetimeStats?.points_stolen || 0}
+                  </div>
                 </div>
               </div>
             )}
