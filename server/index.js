@@ -246,17 +246,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // --- NEW: FETCH DB STATS & FRIENDS ---
+    // --- NEW: FETCH DB STATS, FRIENDS & PROFILE ---
     let dbStats = null;
     let dbFriends = [];
+    let dbProfile = null;
     
     // Guests have short IDs, Supabase users have long UUIDs (>20 chars)
     if (supabase && playerId.length > 20) { 
-      // 1. Fetch lifetime stats
+      // 1. Fetch or Create Profile (Trigger handles short_id generation)
+      let { data: profileData } = await supabase.from('profiles').select('*').eq('id', playerId).single();
+      if (!profileData) {
+        const { data: newProfile } = await supabase.from('profiles').insert({ id: playerId, display_name: name }).select('*').single();
+        profileData = newProfile;
+      }
+      dbProfile = profileData;
+
+      // 2. Fetch lifetime stats
       const { data: statsData } = await supabase.from('stats').select('*').eq('user_id', playerId).single();
       dbStats = statsData;
 
-      // 2. Fetch permanent friends
+      // 3. Fetch permanent friends
       const { data: friendsData } = await supabase
         .from('friendships')
         .select('*')
@@ -268,40 +277,26 @@ io.on('connection', (socket) => {
       }
     }
 
+    const finalName = dbProfile?.display_name || (typeof name === 'string' && name.trim() ? name.trim().slice(0, 40) : 'Player');
+
     state.players[playerId] ??= {
       id: playerId,
-      name: typeof name === 'string' && name.trim() ? name.trim().slice(0, 40) : 'Player',
+      shortId: dbProfile?.short_id || playerId, // Give guests their short GUEST-XXXX id
+      name: finalName,
       isReady: false,
       isPlaying: false,
-      friendsList: dbFriends, // <-- Now uses the permanent DB list!
+      friendsList: dbFriends, 
       score: 0,
       streak: 0,
       inventory: [],
-      powerUpUses: {
-        self_protect: 0,
-        reverse: 0,
-        offensive_attack: 0,
-        ultimate_steal: 0,
-        focus_cracker: 0,
-        self_help: 0,
-      },
+      powerUpUses: { self_protect: 0, reverse: 0, offensive_attack: 0, ultimate_steal: 0, focus_cracker: 0, self_help: 0 },
       isReversing: false,
       isShielded: false,
       isMicMuted: false,
       isSpeakerMuted: false,
       isSpeaking: false,
-      stats: {
-        highestStreak: 0,
-        attacksUsed: 0,
-        pointsStolen: 0,
-      },
-      lifetimeStats: dbStats || {
-        games_played: 0,
-        total_wins: 0,
-        highest_streak: 0,
-        attacks_used: 0,
-        points_stolen: 0
-      }
+      stats: { highestStreak: 0, attacksUsed: 0, pointsStolen: 0 },
+      lifetimeStats: dbStats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 }
     };
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
@@ -672,6 +667,51 @@ io.on('connection', (socket) => {
     const alertType = powerUpType === 'self_protect' ? 'defense' : 'attack';
     broadcastAlert(socket.data.roomId, `${player.name} used ${powerUpNames[powerUpType]}!`, alertType);
   });
+
+  socket.on('update_profile_name', async ({ newName } = {}, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !supabase || player.id.length <= 20) {
+      acknowledge(callback, { ok: false, message: 'Only registered accounts can change their name.' });
+      return;
+    }
+    
+    const trimmedName = newName?.trim().slice(0, 40);
+    if (!trimmedName) return;
+
+    // Check if name is taken by someone else
+    const { data: existing } = await supabase.from('profiles').select('id').eq('display_name', trimmedName).neq('id', player.id).single();
+    if (existing) {
+      acknowledge(callback, { ok: false, message: 'That name is already taken!' });
+      return;
+    }
+
+    const { error } = await supabase.from('profiles').update({ display_name: trimmedName }).eq('id', player.id);
+    if (error) {
+      acknowledge(callback, { ok: false, message: 'Error saving name.' });
+      return;
+    }
+
+    player.name = trimmedName;
+    acknowledge(callback, { ok: true, name: trimmedName });
+    broadcastGameState(socket.data.roomId);
+  });
+
+  socket.on('search_players', async ({ query } = {}, callback) => {
+    if (!supabase || typeof query !== 'string' || query.trim().length < 3) {
+      acknowledge(callback, { ok: true, results: [] });
+      return;
+    }
+    
+    const safeQuery = query.trim();
+    // Search by partial display_name OR exact short_id
+    const { data } = await supabase.from('profiles')
+      .select('id, display_name, short_id')
+      .or(`display_name.ilike.%${safeQuery}%,short_id.ilike.${safeQuery}`)
+      .limit(10);
+
+    acknowledge(callback, { ok: true, results: data || [] });
+  });
+
 });
 
 const port = Number(process.env.PORT ?? 3001);
