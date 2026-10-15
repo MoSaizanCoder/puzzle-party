@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient.js';
 import '../../styles/lobby.css';
 
@@ -9,99 +9,94 @@ const imageOptions = [
   'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
 ];
 
-
-
 function VoiceControl({ icon, label, muted, interactive, onToggle }) {
   const iconClassName = `voice-icon${muted ? ' is-muted' : ''}`;
   const iconMarkup = <span className={iconClassName} aria-hidden="true">{icon}</span>;
 
-  if (!interactive) {
-    return (
-      <span className="voice-status" title={label} role="img" aria-label={label}>
-        {iconMarkup}
-      </span>
-    );
-  }
+  if (!interactive) return <span className="voice-status" title={label} role="img" aria-label={label}>{iconMarkup}</span>;
 
   return (
-    <button
-      type="button"
-      className="voice-control"
-      title={label}
-      aria-label={label}
-      aria-pressed={muted}
-      onClick={onToggle}
-    >
+    <button type="button" className="voice-control" title={label} aria-label={label} aria-pressed={muted} onClick={onToggle}>
       {iconMarkup}
     </button>
   );
 }
 
 export default function LobbyScreen({ gameState, socket, localPlayerId }) {
-  const [friendId, setFriendId] = useState('');
   const [showImageModal, setShowImageModal] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [playerIdCopied, setPlayerIdCopied] = useState(false);
+
+  // --- NEW: SEARCH & EDIT STATES ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
   const hostId = gameState?.hostId ?? null;
   const isHost = gameState?.hostId === localPlayerId;
   const nonHostPlayers = players.filter((player) => player.id !== hostId);
   const selectedPuzzleImage = gameState?.puzzleImageSrc ?? null;
-  const canStartGame = Boolean(gameState?.puzzleImageSrc)
-    && nonHostPlayers.every((player) => player.isReady === true);
-
-  const handleToggleReady = () => {
-    if (!socket?.connected) return;
-    socket.emit('toggle_ready');
-  };
-
-  const handleAddFriend = (event) => {
-    event.preventDefault();
-    if (!socket?.connected || !friendId.trim()) return;
-    socket.emit('add_friend', { targetPlayerId: friendId.trim() });
-    setFriendId('');
-  };
-
-  const handleSelectImage = (imageUrl) => {
-    if (!socket?.connected) return;
-    socket.emit('select_image', { imageUrl });
-    setShowImageModal(false);
-  };
-
-  const handleStartGame = () => {
-    if (!socket?.connected || !canStartGame) return;
-    socket.emit('start_game');
-  };
-
-  const updateVoiceState = (key) => {
-    if (!socket?.connected) return;
-    const currentValue = localPlayer?.[key] ?? false;
-    socket.emit('update_voice_state', { [key]: !currentValue });
-  };
-
-  const copyPlayerId = async () => {
-    try {
-      await navigator.clipboard.writeText(localPlayerId);
-      setPlayerIdCopied(true);
-    } catch {
-      setPlayerIdCopied(false);
-    }
-  };
+  const canStartGame = Boolean(gameState?.puzzleImageSrc) && nonHostPlayers.every((player) => player.isReady === true);
 
   const fileInputRef = useRef(null);
+
+  // --- SOCKET ACTIONS ---
+  const handleToggleReady = () => { if (socket?.connected) socket.emit('toggle_ready'); };
+  const handleSelectImage = (imageUrl) => { if (socket?.connected) { socket.emit('select_image', { imageUrl }); setShowImageModal(false); } };
+  const handleStartGame = () => { if (socket?.connected && canStartGame) socket.emit('start_game'); };
+  const updateVoiceState = (key) => { if (socket?.connected) socket.emit('update_voice_state', { [key]: !(localPlayer?.[key] ?? false) }); };
 
   const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file || !socket?.connected) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
-      const base64Url = e.target.result;
-      socket.emit('select_image', { imageUrl: base64Url });
+      socket.emit('select_image', { imageUrl: e.target.result });
       setShowImageModal(false);
     };
     reader.readAsDataURL(file);
+  };
+
+  const copyCode = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setPlayerIdCopied(true);
+      setTimeout(() => setPlayerIdCopied(false), 2000);
+    } catch {}
+  };
+
+  // --- NEW: SEARCH, EDIT & ADD FRIENDS ---
+  const handleUpdateName = (e) => {
+    e.preventDefault();
+    if (!socket?.connected || !editNameValue.trim()) return;
+    socket.emit('update_profile_name', { newName: editNameValue }, (result) => {
+      if (result.ok) setIsEditingName(false);
+      else alert(result.message);
+    });
+  };
+
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    if (query.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    socket.emit('search_players', { query }, (result) => {
+      setIsSearching(false);
+      if (result.ok) setSearchResults(result.results);
+    });
+  };
+
+  const handleAddFriend = (targetId) => {
+    if (!socket?.connected || !targetId) return;
+    socket.emit('add_friend', { targetPlayerId: targetId });
+    setSearchQuery('');
+    setSearchResults([]);
   };
 
   return (
@@ -115,38 +110,10 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                 <h1 id="lobby-title">Puzzle Party</h1>
               </div>
               <div className="lobby-header-icons">
-                <button
-                  type="button"
-                  className="lobby-icon-button"
-                  aria-label="Open profile"
-                  title="Profile"
-                  onClick={() => setActiveModal('profile')}
-                >
-                  👤
-                </button>
-                <button
-                  type="button"
-                  className="lobby-icon-button"
-                  aria-label="Open friends"
-                  title="Friends"
-                  onClick={() => setActiveModal('friends')}
-                >
-                  👥
-                </button>
-                <VoiceControl
-                  icon="🎙"
-                  label={localPlayer?.isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
-                  muted={localPlayer?.isMicMuted ?? false}
-                  interactive={true}
-                  onToggle={() => updateVoiceState('isMicMuted')}
-                />
-                <VoiceControl
-                  icon="🔊"
-                  label={localPlayer?.isSpeakerMuted ? 'Unmute speaker' : 'Mute speaker'}
-                  muted={localPlayer?.isSpeakerMuted ?? false}
-                  interactive={true}
-                  onToggle={() => updateVoiceState('isSpeakerMuted')}
-                />
+                <button type="button" className="lobby-icon-button" aria-label="Profile" onClick={() => setActiveModal('profile')}>👤</button>
+                <button type="button" className="lobby-icon-button" aria-label="Friends" onClick={() => setActiveModal('friends')}>👥</button>
+                <VoiceControl icon="🎙" label="Microphone" muted={localPlayer?.isMicMuted ?? false} interactive={true} onToggle={() => updateVoiceState('isMicMuted')} />
+                <VoiceControl icon="🔊" label="Speaker" muted={localPlayer?.isSpeakerMuted ?? false} interactive={true} onToggle={() => updateVoiceState('isSpeakerMuted')} />
               </div>
             </div>
 
@@ -158,9 +125,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   return (
                     <li key={player.id} className={player.id === hostId ? 'host-row' : ''}>
                       <span className="player-name">{player.name}</span>
-                      <span className={`player-status ${role.toLowerCase()}`}>
-                        {role}
-                      </span>
+                      <span className={`player-status ${role.toLowerCase()}`}>{role}</span>
                     </li>
                   );
                 })}
@@ -173,20 +138,10 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   {localPlayer?.isReady ? 'Mark Unready' : 'Ready'}
                 </button>
               )}
-
               {isHost && (
                 <>
-                  <button type="button" className="secondary-button" onClick={() => setShowImageModal(true)}>
-                    Select Image
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleStartGame}
-                    disabled={!canStartGame || !socket?.connected}
-                  >
-                    Start Game
-                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setShowImageModal(true)}>Select Image</button>
+                  <button type="button" className="primary-button" onClick={handleStartGame} disabled={!canStartGame || !socket?.connected}>Start Game</button>
                 </>
               )}
             </div>
@@ -194,7 +149,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
 
           <div className="lobby-right-column">
             {selectedPuzzleImage ? (
-              <div className="lobby-preview-card" aria-label="Selected puzzle preview">
+              <div className="lobby-preview-card">
                 <div className="lobby-preview-header">
                   <span className="profile-label">Selected Puzzle</span>
                   <span className="lobby-preview-badge">{isHost ? 'Host pick' : 'Match image'}</span>
@@ -202,7 +157,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                 <img src={selectedPuzzleImage} alt="Selected puzzle preview" className="lobby-preview-image" />
               </div>
             ) : (
-              <div className="lobby-preview-placeholder" role="status">
+              <div className="lobby-preview-placeholder">
                 <span className="preview-placeholder-mark" aria-hidden="true">✦</span>
                 <p>Waiting for Host to select a puzzle...</p>
               </div>
@@ -211,81 +166,114 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         </div>
       </section>
 
+      {/* --- MODALS --- */}
       {activeModal && (
         <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <section
-            className="modal-content glass-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="lobby-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <section className="modal-content glass-panel" onClick={(event) => event.stopPropagation()}>
             <div className="lobby-modal-header">
               <h2 id="lobby-modal-title">{activeModal === 'profile' ? 'Your Profile' : 'Friends'}</h2>
-              <button
-                type="button"
-                className="close-modal"
-                onClick={() => setActiveModal(null)}
-                aria-label="Close dialog"
-              >
-                ×
-              </button>
+              <button type="button" className="close-modal" onClick={() => setActiveModal(null)}>×</button>
             </div>
 
             {activeModal === 'profile' ? (
               <div className="profile-modal-body">
                 <div className="profile-modal-name">
-                  <span className="profile-label">Player</span>
-                  <h3>{localPlayer?.name ?? 'Player'}</h3>
+                  <span className="profile-label">Player Name</span>
+                  {isEditingName ? (
+                    <form onSubmit={handleUpdateName} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input 
+                        type="text" 
+                        value={editNameValue} 
+                        onChange={(e) => setEditNameValue(e.target.value)} 
+                        maxLength={40}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #ccc' }}
+                        autoFocus
+                      />
+                      <button type="submit" className="primary-button" style={{ padding: '8px 12px' }}>Save</button>
+                      <button type="button" className="secondary-button" style={{ padding: '8px 12px' }} onClick={() => setIsEditingName(false)}>Cancel</button>
+                    </form>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h3>{localPlayer?.name ?? 'Player'}</h3>
+                      {localPlayerId.length > 20 && (
+                        <button type="button" className="secondary-button" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => { setEditNameValue(localPlayer?.name || ''); setIsEditingName(true); }}>
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="profile-modal-id">
-                  <span className="profile-label">Player ID</span>
-                  <code>{localPlayerId}</code>
-                  <button type="button" className="copy-id-button" onClick={copyPlayerId}>
-                    {playerIdCopied ? 'Copied' : 'Copy ID'}
+                  <span className="profile-label">Friend Code</span>
+                  <code>{localPlayer?.shortId || localPlayerId}</code>
+                  <button type="button" className="copy-id-button" onClick={() => copyCode(localPlayer?.shortId || localPlayerId)}>
+                    {playerIdCopied ? 'Copied!' : 'Copy Code'}
                   </button>
                 </div>
-                <button 
-                  type="button" 
-                  className="secondary-button"
-                  onClick={async () => {
-                    await supabase.auth.signOut(); // Clears Supabase session
-                    sessionStorage.removeItem('puzzle-party-player-id'); // Clears Guest session
-                    window.location.reload(); // Refreshes back to Auth screen
-                  }}
-                >
+                <button type="button" className="secondary-button" onClick={async () => { await supabase.auth.signOut(); sessionStorage.removeItem('puzzle-party-player-id'); window.location.reload(); }}>
                   Sign Out
                 </button>
               </div>
             ) : (
               <div className="friends-modal-body">
-                <form className="friend-form" onSubmit={handleAddFriend}>
-                  <label htmlFor="friend-id">Add Friend</label>
+                <div className="friend-form">
+                  <label htmlFor="friend-search">Find Friends</label>
                   <div className="friend-input-row">
                     <input
-                      id="friend-id"
+                      id="friend-search"
                       type="text"
-                      value={friendId}
-                      onChange={(event) => setFriendId(event.target.value)}
-                      placeholder="Enter player ID"
+                      value={searchQuery}
+                      onChange={(e) => handleSearch(e.target.value)}
+                      placeholder="Search by name or 6-digit code..."
                       disabled={!socket?.connected}
                     />
-                    <button type="submit" disabled={!socket?.connected || !friendId.trim()}>
-                      Add
-                    </button>
                   </div>
-                </form>
+                  
+                  {searchQuery.trim().length >= 3 && (
+                    <div className="search-results" style={{ marginTop: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '10px', padding: '12px' }}>
+                      <h4 style={{ margin: '0 0 8px', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-plum)' }}>
+                        {isSearching ? 'Searching...' : 'Results'}
+                      </h4>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '8px' }}>
+                        {searchResults.length === 0 && !isSearching && <li style={{ fontSize: '0.9rem' }}>No players found.</li>}
+                        {searchResults.map(result => {
+                          const isAlreadyFriend = localPlayer?.friendsList.includes(result.id);
+                          const isSelf = result.id === localPlayerId;
+                          return (
+                            <li key={result.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                              <div>
+                                <strong style={{ display: 'block' }}>{result.display_name}</strong>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-plum)' }}>#{result.short_id}</span>
+                              </div>
+                              <button 
+                                type="button" 
+                                className={isAlreadyFriend ? "secondary-button" : "primary-button"}
+                                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                                onClick={() => handleAddFriend(result.id)}
+                                disabled={isAlreadyFriend || isSelf}
+                              >
+                                {isAlreadyFriend ? 'Added' : 'Add'}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
                 <div className="friends-list-section">
-                  <h3>Added Friends</h3>
+                  <h3>Your Friends</h3>
                   {(localPlayer?.friendsList ?? []).length > 0 ? (
                     <ul className="friends-list">
                       {(localPlayer?.friendsList ?? []).map((friendIdEntry) => {
-                        const friend = players.find((player) => player.id === friendIdEntry);
+                        const friend = players.find((p) => p.id === friendIdEntry);
+                        // If they are in the lobby, we have their name. If they are offline, we just show a generic "Offline Friend" for now (we'll fetch their name from DB in the next step!)
                         return (
                           <li key={friendIdEntry}>
-                            <span>{friend?.name ?? friendIdEntry}</span>
+                            <span>{friend?.name ?? "Offline Friend"}</span>
                             <span className={`friend-presence${friend ? ' is-online' : ''}`}>
-                              {friend ? 'In lobby' : 'Added'}
+                              {friend ? 'In lobby' : 'Offline'}
                             </span>
                           </li>
                         );
@@ -301,44 +289,23 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         </div>
       )}
 
+      {/* --- IMAGE MODAL --- */}
       {showImageModal && isHost && (
-        <div className="image-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="image-modal-title">
-          <div className="image-modal glass-panel">
+        <div className="image-modal-backdrop" onClick={() => setShowImageModal(false)}>
+          <div className="image-modal glass-panel" onClick={(e) => e.stopPropagation()}>
             <div className="image-modal-header">
-              <h2 id="image-modal-title">Choose a Puzzle Image</h2>
-              <button type="button" className="close-modal" onClick={() => setShowImageModal(false)} aria-label="Close image picker">
-                ×
-              </button>
+              <h2>Choose a Puzzle Image</h2>
+              <button type="button" className="close-modal" onClick={() => setShowImageModal(false)}>×</button>
             </div>
-            
-            {/* NEW CUSTOM UPLOAD BUTTON */}
             <div style={{ marginBottom: '16px' }}>
-              <input 
-                type="file" 
-                accept="image/*" 
-                ref={fileInputRef} 
-                style={{ display: 'none' }} 
-                onChange={handleFileUpload} 
-              />
-              <button 
-                type="button" 
-                className="primary-button" 
-                style={{ width: '100%', padding: '12px', fontSize: '1rem' }} 
-                onClick={() => fileInputRef.current?.click()}
-              >
+              <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
+              <button type="button" className="primary-button" style={{ width: '100%', padding: '12px' }} onClick={() => fileInputRef.current?.click()}>
                 📸 Upload Custom Image
               </button>
             </div>
-
             <div className="image-grid">
               {imageOptions.map((url) => (
-                <button
-                  key={url}
-                  type="button"
-                  className="image-card"
-                  onClick={() => handleSelectImage(url)}
-                  aria-label="Select puzzle image"
-                >
+                <button key={url} type="button" className="image-card" onClick={() => handleSelectImage(url)}>
                   <img src={url} alt="Puzzle art option" />
                 </button>
               ))}
