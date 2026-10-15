@@ -471,6 +471,20 @@ io.on('connection', (socket) => {
     acknowledge(callback, { ok: true, stats: stats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 } });
   });
 
+  socket.on('send_lobby_invite', ({ targetPlayerId, roomId, roomName } = {}, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !targetPlayerId) return;
+
+    // Send a real-time invite packet directly to the target player's socket ID/room
+    io.to(targetPlayerId).emit('lobby_invite_received', {
+      senderName: player.name,
+      roomId,
+      roomName: roomName || `${player.name}'s Game`
+    });
+
+    if (typeof callback === 'function') callback({ ok: true });
+  });
+
   socket.on('dev_reset_game', () => {
     const player = getPlayer(socket); const state = getGameState(socket);
     if (!player || !state || state.hostId !== player.id) return;

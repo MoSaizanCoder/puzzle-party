@@ -28,8 +28,10 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
 
-  // --- NEW: FRIEND STATS MODAL STATE ---
   const [viewingFriendStats, setViewingFriendStats] = useState(null);
+  
+  // --- NEW: INCOMING INVITE STATE ---
+  const [incomingInvite, setIncomingInvite] = useState(null);
 
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
@@ -50,8 +52,19 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
       alert(`💌 New friend request from ${requester.name}! Check your Friends tab.`);
       setLocalPending(prev => [...prev, requester]);
     };
+
+    // --- NEW: LISTEN FOR LOBBY INVITES ---
+    const handleLobbyInvite = (inviteData) => {
+      setIncomingInvite(inviteData);
+    };
+
     socket.on('friend_request_received', handleNewRequest);
-    return () => socket.off('friend_request_received', handleNewRequest);
+    socket.on('lobby_invite_received', handleLobbyInvite);
+
+    return () => {
+      socket.off('friend_request_received', handleNewRequest);
+      socket.off('lobby_invite_received', handleLobbyInvite);
+    };
   }, [socket]);
 
   const handleToggleReady = () => { if (socket?.connected) socket.emit('toggle_ready'); };
@@ -106,7 +119,6 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
     setLocalPending(prev => prev.filter(req => req.id !== requesterId));
   };
 
-  // --- NEW: REMOVE & VIEW STATS ACTIONS ---
   const handleRemoveFriend = (friendId) => {
     if (!socket?.connected) return;
     if (window.confirm("Are you sure you want to remove this friend?")) {
@@ -122,6 +134,21 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
       } else {
         alert('Could not load stats for this player.');
       }
+    });
+  };
+
+  // --- NEW: SEND INVITATION ACTION ---
+  const handleSendInvite = (friendObj) => {
+    if (!socket?.connected) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentRoomId = urlParams.get('room');
+    
+    socket.emit('send_lobby_invite', { 
+      targetPlayerId: friendObj.id, 
+      roomId: currentRoomId,
+      roomName: `${localPlayer?.name || 'A player'}'s Lobby`
+    }, (res) => {
+      if (res?.ok) alert(`Invite sent to ${friendObj.name}!`);
     });
   };
 
@@ -183,6 +210,36 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
           </div>
         </div>
       </section>
+
+      {/* --- NEW: INCOMING INVITE POPUP MODAL --- */}
+      {incomingInvite && (
+        <div className="modal-overlay" style={{ zIndex: 300 }}>
+          <section className="modal-content glass-panel" style={{ textAlign: 'center', padding: '32px' }}>
+            <h2 style={{ color: 'var(--text-plum)', marginTop: 0 }}>Game Invite!</h2>
+            <p style={{ fontSize: '1.1rem', margin: '16px 0' }}>
+              <strong>{incomingInvite.senderName}</strong> has invited you to join their puzzle room.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '24px' }}>
+              <button 
+                type="button" 
+                className="primary-button" 
+                onClick={() => {
+                  window.location.href = `?room=${incomingInvite.roomId}`;
+                }}
+              >
+                Accept & Join
+              </button>
+              <button 
+                type="button" 
+                className="secondary-button" 
+                onClick={() => setIncomingInvite(null)}
+              >
+                Decline
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* FRIEND STATS MODAL (Read Only) */}
       {viewingFriendStats && (
@@ -328,7 +385,11 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '6px' }}>
-                              <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>
+                              {/* --- NEW: INVITE BUTTON --- */}
+                              <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#d9f0e5' }} onClick={() => handleSendInvite(friendObj)}>
+                                Invite
+                              </button>
+                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>
                                 Stats
                               </button>
                               <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fee2e2', color: '#991b1b' }} onClick={() => handleRemoveFriend(friendObj.id)}>
