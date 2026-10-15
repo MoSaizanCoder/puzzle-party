@@ -23,11 +23,12 @@ function getPlayerIdentity(session) {
   let playerId = sessionStorage.getItem(storageKey);
 
   if (!playerId) {
-    playerId = crypto.randomUUID();
+    // --- NEW: Generate a short, easy-to-type 6-character Guest ID ---
+    playerId = 'GUEST-' + Math.random().toString(36).substring(2, 6).toUpperCase();
     sessionStorage.setItem(storageKey, playerId);
   }
 
-  return { id: playerId, name: `Guest ${playerId.slice(-4)}` };
+  return { id: playerId, name: playerId };
 }
 
 export default function App() {
