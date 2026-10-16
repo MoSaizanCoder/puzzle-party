@@ -1,8 +1,9 @@
 import { generatePuzzlePieces } from './PuzzleGenerator.js';
 
 export default class GameEngine {
-  constructor(canvas, sourceImageUrl, { onGameState = () => {}, socket, localPlayerId, initialGameState } = {}) {
+  constructor(canvas, sourceImageUrl, { onGameState = () => {}, socket, localPlayerId, initialGameState, onPieceSnap = () => {} } = {}) {
     this.canvas = canvas;
+    this.onPieceSnap = onPieceSnap;
     this.sourceImageUrl = sourceImageUrl;
     this.context = null;
     this.image = null;
@@ -97,8 +98,11 @@ export default class GameEngine {
       } else if (Object.keys(state.pieces ?? {}).length > 0) {
         this.syncPieceState(state.pieces);
       } else if (state.status === 'PLAYING' && !this.initialPiecesSent) {
-        if (this.drawOrder.length === 0) this.regeneratePieces();
-        this.publishInitialPieces();
+        // --- NEW: Fix Race Condition! ONLY the Host can generate starting positions ---
+        if (state.hostId === this.playerId) {
+          if (this.drawOrder.length === 0) this.regeneratePieces();
+          this.publishInitialPieces();
+        }
       }
       this.onGameState(state);
     };
@@ -195,9 +199,11 @@ export default class GameEngine {
     const container = this.canvas.parentElement;
     this.viewportWidth = container?.clientWidth || bounds.width || 0;
     this.viewportHeight = container?.clientHeight || bounds.height || 0;
+    
+    // --- NEW: Force a standardized virtual coordinate space for all devices ---
     if (this.width === 0 || this.height === 0) {
-      this.width = this.viewportWidth;
-      this.height = this.viewportHeight;
+      this.width = 1600;
+      this.height = 1200;
     }
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(this.viewportWidth * this.pixelRatio);
@@ -437,6 +443,7 @@ export default class GameEngine {
         piece.isLockedInFrame = true;
       }
       this.emitPieceConnected(movingIds);
+      this.onPieceSnap(); // <-- ADD THIS
       return true;
     }
 
@@ -484,6 +491,7 @@ export default class GameEngine {
 
     this.bringToFront(new Set([...movingIds, ...targetGroupIds]));
     this.emitPieceConnected(new Set([...movingIds, ...targetGroupIds]));
+    this.onPieceSnap(); // <-- ADD THIS
     return true;
   }
 

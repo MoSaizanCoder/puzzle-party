@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import '../../styles/playing.css';
 import ConfettiBurst from './ConfettiBurst.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
+import { playStreakSound, playPowerUpSound } from '../utils/sounds.js';
 
 const powerCosts = {
   self_protect: 3,
@@ -104,8 +105,19 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       .some(([id, streak]) => streak > (previousStreaks.current[id] ?? 0));
 
     previousStreaks.current = nextStreaks;
-    if (streakIncreased) setConfettiSequence((sequence) => sequence + 1);
+    if (streakIncreased) {
+      setConfettiSequence((sequence) => sequence + 1);
+      playStreakSound(); // <-- ADD THIS
+    }
   }, [gameState?.players]);
+
+  // --- NEW: Play Power-Up Sounds on Broadcast ---
+  useEffect(() => {
+    if (gameState?.broadcastMessage) {
+      const isAttack = gameState.broadcastMessage.type === 'attack';
+      playPowerUpSound(isAttack);
+    }
+  }, [gameState?.broadcastMessage]);
 
   const handleUsePowerUp = (powerUpType) => {
     if (!socket?.connected) {

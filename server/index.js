@@ -130,7 +130,7 @@ const httpServer = createServer();
 function scatterPiece(roomId, piece) {
   const state = activeMatches.get(roomId);
   if (!state) return;
-  const width = state.boardWidth || 1280; const height = state.boardHeight || 800;
+  const width = state.boardWidth || 1600; const height = state.boardHeight || 1200;
   const pWidth = piece.shapeData?.cellWidth ?? 80; const pHeight = piece.shapeData?.cellHeight ?? 80;
   const margin = 12; const maxX = Math.max(margin, width - pWidth - margin); const maxY = Math.max(margin, height - pHeight - margin);
   const hBand = Math.max(margin, height * 0.16); const vBand = Math.max(margin, width * 0.16);
