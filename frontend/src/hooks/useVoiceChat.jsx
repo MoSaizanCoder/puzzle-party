@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeakerMuted) {
+// Add playerCount to the parameters
+export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeakerMuted, playerCount) {
   const [streams, setStreams] = useState({});
   const localStream = useRef(null);
   const peers = useRef({});
@@ -12,17 +13,15 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
   useEffect(() => {
     let isMounted = true;
 
-    // --- NEW: Do not request hardware until they pass the Auth screen ---
     if (!socket) return; 
 
-    if (isMicMuted) {
-      // Completely stop the hardware tracks to kill the browser recording light
+    // If muted OR if the player is alone in the lobby, kill the hardware
+    if (isMicMuted || playerCount <= 1) {
       if (localStream.current) {
         localStream.current.getTracks().forEach(track => track.stop());
         localStream.current = null;
       }
       
-      // Replace active WebRTC network senders with silence
       Object.values(peers.current).forEach(peer => {
         if (peer && typeof peer.getSenders === 'function') {
           peer.getSenders().forEach(sender => {
@@ -33,7 +32,7 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
         }
       });
       
-      console.log('🎤 Microphone hardware STOPPED (Browser light off)');
+      console.log('🎤 Microphone hardware STOPPED (Muted or Alone)');
       if (!isReady) setIsReady(true);
     } else {
       // Re-acquire hardware (Browser remembers permission, so no prompt!)

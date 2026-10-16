@@ -33,6 +33,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   // --- NEW: INCOMING INVITE STATE ---
   const [incomingInvite, setIncomingInvite] = useState(null);
 
+  // --- NEW: GLOBAL PRESENCE STATE ---
+  const [globalPresence, setGlobalPresence] = useState({});
+
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
   const hostId = gameState?.hostId ?? null;
@@ -53,17 +56,24 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
       setLocalPending(prev => [...prev, requester]);
     };
 
-    // --- NEW: LISTEN FOR LOBBY INVITES ---
-    const handleLobbyInvite = (inviteData) => {
-      setIncomingInvite(inviteData);
-    };
+    // --- NEW: LISTEN FOR LOBBY INVITES & PRESENCE ---
+    const handleLobbyInvite = (inviteData) => setIncomingInvite(inviteData);
+    const handlePresence = (presenceMap) => setGlobalPresence(presenceMap);
+    const handleReply = ({ senderName, text }) => alert(`💬 ${senderName} says: "${text}"`);
 
     socket.on('friend_request_received', handleNewRequest);
     socket.on('lobby_invite_received', handleLobbyInvite);
+    socket.on('presence_update', handlePresence);
+    socket.on('reminder_reply_received', handleReply);
+
+    // Ask the server for the latest statuses immediately
+    socket.emit('request_presence');
 
     return () => {
       socket.off('friend_request_received', handleNewRequest);
       socket.off('lobby_invite_received', handleLobbyInvite);
+      socket.off('presence_update', handlePresence);
+      socket.off('reminder_reply_received', handleReply);
     };
   }, [socket]);
 
@@ -185,7 +195,16 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
             </div>
 
             <div className="lobby-actions">
-              {!isHost && <button type="button" className="primary-button" onClick={handleToggleReady} disabled={!socket?.connected}>{localPlayer?.isReady ? 'Mark Unready' : 'Ready'}</button>}
+              {!isHost && (
+                <>
+                  <button type="button" className="primary-button" onClick={handleToggleReady} disabled={!socket?.connected}>
+                    {localPlayer?.isReady ? 'Mark Unready' : 'Ready'}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => window.location.href = window.location.pathname} style={{ background: '#fee2e2', color: '#991b1b' }}>
+                    Leave Party
+                  </button>
+                </>
+              )}
               {isHost && (
                 <>
                   <button type="button" className="secondary-button" onClick={() => setShowImageModal(true)}>Select Image</button>
@@ -375,26 +394,31 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   {(localPlayer?.friendsList ?? []).length > 0 ? (
                     <ul className="friends-list">
                       {(localPlayer?.friendsList ?? []).map((friendObj) => {
-                        const lobbyPlayer = players.find((p) => p.id === friendObj.id);
+                        const status = globalPresence[friendObj.id] || 'OFFLINE';
+                        const statusColors = { ONLINE: '#28784b', IN_LOBBY: '#0284c7', IN_GAME: '#b45309', OFFLINE: 'var(--text-plum)' };
+                        const statusLabels = { ONLINE: 'Online', IN_LOBBY: 'In Lobby', IN_GAME: 'In Game', OFFLINE: 'Offline' };
+
                         return (
                           <li key={friendObj.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <span>{lobbyPlayer?.name ?? friendObj.name} <small style={{ color: 'var(--text-plum)', marginLeft: '6px' }}>#{friendObj.shortId}</small></span>
-                              <div className={`friend-presence${lobbyPlayer ? ' is-online' : ''}`} style={{ fontSize: '0.7rem', marginTop: '2px' }}>
-                                {lobbyPlayer ? 'In lobby' : 'Offline'}
+                              <span>{friendObj.name} <small style={{ color: 'var(--text-plum)', marginLeft: '6px' }}>#{friendObj.shortId}</small></span>
+                              <div style={{ fontSize: '0.7rem', marginTop: '2px', color: statusColors[status], fontWeight: 'bold' }}>
+                                {statusLabels[status]}
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '6px' }}>
-                              {/* --- NEW: INVITE BUTTON --- */}
-                              <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#d9f0e5' }} onClick={() => handleSendInvite(friendObj)}>
-                                Invite
-                              </button>
-                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>
-                                Stats
-                              </button>
-                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fee2e2', color: '#991b1b' }} onClick={() => handleRemoveFriend(friendObj.id)}>
-                                Remove
-                              </button>
+                              {status === 'IN_GAME' && (
+                                <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fef3c7' }} onClick={() => socket.emit('send_reminder', { targetId: friendObj.id })}>
+                                  Remind
+                                </button>
+                              )}
+                              {status !== 'IN_GAME' && status !== 'OFFLINE' && (
+                                <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#d9f0e5' }} onClick={() => handleSendInvite(friendObj)}>
+                                  Invite
+                                </button>
+                              )}
+                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>Stats</button>
+                              <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fee2e2', color: '#991b1b' }} onClick={() => handleRemoveFriend(friendObj.id)}>Remove</button>
                             </div>
                           </li>
                         );

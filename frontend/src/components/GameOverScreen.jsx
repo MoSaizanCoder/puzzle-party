@@ -15,21 +15,8 @@ export default function GameOverScreen({ gameState, socket, localPlayerId }) {
 
   const handleReturnToLobby = () => {
     if (!socket?.connected) return;
-    
-    const isHost = gameState?.hostId === localPlayerId;
-
-    if (isHost) {
-      // If Host clicks it, it resets the room for everyone
-      socket.emit('return_to_lobby');
-    } else {
-      // If a non-host clicks it, they just leave the current game and return to a fresh lobby screen
-      socket.emit('leave_game', {}, (result) => {
-        if (result?.ok) {
-           sessionStorage.removeItem('puzzle-party-player-id');
-           window.location.reload();
-        }
-      });
-    }
+    // Emits a request to drop this specific player back to the lobby screen
+    socket.emit('return_to_lobby_individual');
   };
 
   return (

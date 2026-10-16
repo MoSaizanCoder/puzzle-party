@@ -76,6 +76,7 @@ function resetGame(roomId) {
   state.status = 'LOBBY';
   io.to(roomId).emit('force_reset');
   broadcastGameState(roomId);
+  updateAndBroadcastPresence();
 }
 
 function reassignHostIfNeeded(roomId) {
@@ -86,6 +87,21 @@ function reassignHostIfNeeded(roomId) {
   if (!state.hostId || !state.players[state.hostId]) {
     state.hostId = remainingPlayers[Math.floor(Math.random() * remainingPlayers.length)];
   }
+}
+
+function updateAndBroadcastPresence() {
+  const presence = {};
+  for (const state of activeMatches.values()) {
+    const playerCount = Object.keys(state.players).length;
+    const isPlaying = state.status !== 'LOBBY';
+    
+    for (const playerId of Object.keys(state.players)) {
+      if (playerCount <= 1) presence[playerId] = 'ONLINE';
+      else if (isPlaying) presence[playerId] = 'IN_GAME';
+      else presence[playerId] = 'IN_LOBBY';
+    }
+  }
+  io.emit('presence_update', presence);
 }
 
 function updatePieceSnapshots(roomId, pieces, includeGroupData = false) {
@@ -228,8 +244,11 @@ io.on('connection', (socket) => {
     // Check if any active websockets are already using this Player ID
     const existingSockets = await io.in(playerId).fetchSockets();
     if (existingSockets.length > 0) {
-      socket.emit('lobby_error', { message: 'Account is already playing in another tab or device.' });
-      return;
+      // Forcibly disconnect the old "ghost" sockets so the reload succeeds
+      existingSockets.forEach(oldSocket => {
+        oldSocket.emit('lobby_error', { message: 'Session refreshed.' });
+        oldSocket.disconnect(true);
+      });
     }
 
     socket.data.playerId = playerId;
@@ -314,6 +333,7 @@ io.on('connection', (socket) => {
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
     io.to(roomId).emit('game_state', state);
+    updateAndBroadcastPresence();
   });
 
   socket.on('disconnect', () => {
@@ -337,6 +357,7 @@ io.on('connection', (socket) => {
 
     if (wasHost || (state.hostId && !state.players[state.hostId])) reassignHostIfNeeded(roomId);
     broadcastGameState(roomId);
+    updateAndBroadcastPresence();
   });
 
   socket.on('webrtc_signal', ({ targetId, signal } = {}) => {
@@ -368,6 +389,25 @@ io.on('connection', (socket) => {
       broadcastGameState(roomId);
     }
     acknowledge(callback, { ok: true });
+    updateAndBroadcastPresence();
+  });
+
+  socket.on('send_reminder', ({ targetId }) => {
+    const player = getPlayer(socket);
+    if (player && targetId) {
+      io.to(targetId).emit('reminder_received', { senderId: player.id, senderName: player.name });
+    }
+  });
+
+  socket.on('reply_reminder', ({ targetId, text }) => {
+    const player = getPlayer(socket);
+    if (player && targetId) {
+      io.to(targetId).emit('reminder_reply_received', { senderName: player.name, text });
+    }
+  });
+
+  socket.on('request_presence', () => {
+    updateAndBroadcastPresence();
   });
 
   socket.on('toggle_ready', (_payload = {}, callback) => {
@@ -396,10 +436,29 @@ io.on('connection', (socket) => {
     const otherPlayers = Object.values(state.players).filter((entry) => entry.id !== state.hostId);
     const allReady = otherPlayers.length === 0 || otherPlayers.every((entry) => entry.isReady === true);
     if (!allReady) { acknowledge(callback, { ok: false, message: 'Every non-host player must be ready.' }); return; }
+    
+    // --- NEW: If starting a fresh game after a Game Over, wipe the old stats and pieces ---
+    if (state.status === 'GAMEOVER') {
+      state.pieces = {};
+      state.chatHistory = [];
+      for (const p of Object.values(state.players)) {
+        p.score = 0; 
+        p.streak = 0; 
+        p.stats = { highestStreak: 0, attacksUsed: 0, pointsStolen: 0 };
+        p.isShielded = false; 
+        p.isReversing = false; 
+        p.inventory = [];
+        for (const type of Object.keys(p.powerUpUses)) p.powerUpUses[type] = 0;
+      }
+      io.to(socket.data.roomId).emit('force_reset');
+    }
+    // --------------------------------------------------------------------------------------
+
     for (const entry of Object.values(state.players)) { if (entry.id === state.hostId || entry.isReady) entry.isPlaying = true; }
     state.status = 'PLAYING';
     acknowledge(callback, { ok: true, status: state.status });
     broadcastGameState(socket.data.roomId);
+    updateAndBroadcastPresence();
   });
 
   socket.on('send_friend_request', async ({ targetPlayerId } = {}, callback) => {
@@ -496,6 +555,19 @@ io.on('connection', (socket) => {
     io.to(socket.data.roomId).emit('force_reset');
     broadcastAlert(socket.data.roomId, 'The Host Reset The Game!', 'defense');
     broadcastGameState(socket.data.roomId);
+  });
+
+  socket.on('return_to_lobby_individual', () => {
+    const player = getPlayer(socket);
+    const state = getGameState(socket);
+    if (!player || !state) return;
+
+    // This drops the player back to the Lobby screen while keeping them in the party
+    player.isPlaying = false;
+    player.isReady = false; 
+
+    broadcastGameState(socket.data.roomId);
+    updateAndBroadcastPresence();
   });
 
   socket.on('return_to_lobby', () => {

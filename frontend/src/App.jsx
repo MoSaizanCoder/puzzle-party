@@ -108,11 +108,13 @@ export default function App() {
   }, [authId, isGuest]); // Now it only reconnects if your actual ID changes
 
   // Initialize Voice Chat globally
+  const playerCount = Object.keys(gameState?.players ?? {}).length;
   const audioElements = useVoiceChat(
     socket, 
     localPlayer?.id, 
     localPlayer?.isMicMuted ?? false, 
-    localPlayer?.isSpeakerMuted ?? false
+    localPlayer?.isSpeakerMuted ?? false,
+    playerCount // <-- Pass the player count
   );
 
   // --- RENDERING ROUTER ---
