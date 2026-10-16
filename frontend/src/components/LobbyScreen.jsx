@@ -28,6 +28,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
 
+  const [leaderboardData, setLeaderboardData] = useState([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
+
   const [viewingFriendStats, setViewingFriendStats] = useState(null);
   
   // --- NEW: INCOMING INVITE STATE ---
@@ -167,6 +170,15 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
       } else {
         alert('Could not load stats for this player.');
       }
+    });
+  };
+
+  const fetchLeaderboard = () => {
+    if (!socket?.connected) return;
+    setIsLoadingLeaderboard(true);
+    socket.emit('get_leaderboard', {}, (res) => {
+      setIsLoadingLeaderboard(false);
+      if (res?.ok) setLeaderboardData(res.leaderboard);
     });
   };
 
@@ -355,12 +367,13 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
               <button type="button" className="close-modal" onClick={() => setIsMenuOpen(false)}>×</button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid rgba(26, 35, 58, 0.1)', paddingBottom: '16px' }}>
-              <button className={activeTab === 'profile' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('profile')} style={{ flex: 1, padding: '8px' }}>Profile</button>
-              <button className={activeTab === 'friends' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('friends')} style={{ flex: 1, padding: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid rgba(26, 35, 58, 0.1)', paddingBottom: '16px', overflowX: 'auto' }}>
+              <button className={activeTab === 'profile' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('profile')} style={{ flex: 1, padding: '8px', minWidth: '70px' }}>Profile</button>
+              <button className={activeTab === 'friends' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('friends')} style={{ flex: 1, padding: '8px', minWidth: '70px' }}>
                 Friends {localPending.length > 0 && <span style={{ background: '#f87171', color: 'white', padding: '2px 6px', borderRadius: '12px', fontSize: '0.7rem', marginLeft: '4px' }}>{localPending.length}</span>}
               </button>
-              <button className={activeTab === 'stats' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('stats')} style={{ flex: 1, padding: '8px' }}>Stats</button>
+              <button className={activeTab === 'stats' ? 'primary-button' : 'secondary-button'} onClick={() => setActiveTab('stats')} style={{ flex: 1, padding: '8px', minWidth: '70px' }}>Stats</button>
+              <button className={activeTab === 'leaderboard' ? 'primary-button' : 'secondary-button'} onClick={() => { setActiveTab('leaderboard'); fetchLeaderboard(); }} style={{ flex: 1, padding: '8px', minWidth: '90px' }}>Global Top</button>
             </div>
 
             {activeTab === 'profile' && (
@@ -533,6 +546,54 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                 </div>
               </div>
             )}
+
+            {activeTab === 'leaderboard' && (
+              <div className="leaderboard-modal-body">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, color: 'var(--text-plum)' }}>Global Top 50</h3>
+                  <button type="button" className="secondary-button" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={fetchLeaderboard}>
+                    Refresh
+                  </button>
+                </div>
+                
+                {isLoadingLeaderboard ? (
+                  <p style={{ textAlign: 'center', color: 'var(--text-plum)', padding: '20px' }}>Loading rankings...</p>
+                ) : (
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '8px', maxHeight: '350px', overflowY: 'auto', paddingRight: '8px' }}>
+                    {leaderboardData.length === 0 ? (
+                      <p style={{ textAlign: 'center', color: 'var(--text-plum)', padding: '20px' }}>No players have completed a game yet.</p>
+                    ) : (
+                      leaderboardData.map((player, index) => {
+                        const rankColors = ['#d97706', '#64748b', '#b45309']; // Gold, Silver, Bronze
+                        const rankColor = index < 3 ? rankColors[index] : 'var(--text-plum)';
+                        const isSelf = player.id === localPlayerId;
+                        
+                        return (
+                          <li key={player.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: isSelf ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.6)', padding: '10px 14px', borderRadius: '10px', border: isSelf ? '2px solid rgba(74, 222, 128, 0.4)' : '1px solid rgba(26,35,58,0.08)' }}>
+                            <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: rankColor, minWidth: '28px', textAlign: 'center' }}>
+                              #{index + 1}
+                            </span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 'bold', color: 'var(--text-navy)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {player.name} {isSelf && '(You)'}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-plum)' }}>
+                                Played: {player.gamesPlayed}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontWeight: 'bold', color: 'var(--shield-green)' }}>{player.wins} Wins</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-navy)' }}>🔥 {player.streak}</div>
+                            </div>
+                          </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                )}
+              </div>
+            )}
+            
           </section>
         </div>
       )}

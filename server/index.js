@@ -541,6 +541,45 @@ io.on('connection', (socket) => {
     acknowledge(callback, { ok: true, stats: stats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 } });
   });
 
+  socket.on('get_leaderboard', async (_payload, callback) => {
+    if (!supabase) {
+      if (typeof callback === 'function') callback({ ok: false, message: 'Database not configured' });
+      return;
+    }
+    
+    try {
+      // Fetch top 50 players sorted by total wins
+      const { data, error } = await supabase
+        .from('stats')
+        .select(`
+          total_wins,
+          highest_streak,
+          games_played,
+          user_id,
+          profiles ( display_name, short_id )
+        `)
+        .order('total_wins', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Format it cleanly for the frontend
+      const leaderboard = data.map((row) => ({
+        id: row.user_id,
+        name: row.profiles?.display_name || 'Unknown',
+        shortId: row.profiles?.short_id || '----',
+        wins: row.total_wins || 0,
+        streak: row.highest_streak || 0,
+        gamesPlayed: row.games_played || 0
+      }));
+
+      if (typeof callback === 'function') callback({ ok: true, leaderboard });
+    } catch (err) {
+      console.error('Leaderboard error:', err);
+      if (typeof callback === 'function') callback({ ok: false, message: 'Failed to load leaderboard.' });
+    }
+  });
+
   socket.on('send_lobby_invite', async ({ targetPlayerId, roomId, roomName } = {}, callback) => {
     const player = getPlayer(socket);
     if (!player || !targetPlayerId) return;
