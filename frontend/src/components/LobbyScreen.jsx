@@ -32,6 +32,8 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   
   // --- NEW: INCOMING INVITE STATE ---
   const [incomingInvite, setIncomingInvite] = useState(null);
+  const [inviteTimer, setInviteTimer] = useState(0);
+  const [inviteCooldowns, setInviteCooldowns] = useState({});
 
   // --- NEW: GLOBAL PRESENCE STATE ---
   const [globalPresence, setGlobalPresence] = useState({});
@@ -50,6 +52,24 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const fileInputRef = useRef(null);
   const [localPending, setLocalPending] = useState([]);
   
+  // --- NEW: AUTO-DECLINE TIMER ---
+  useEffect(() => {
+    if (incomingInvite) {
+      setInviteTimer(10);
+      const timerId = setInterval(() => {
+        setInviteTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerId);
+            setIncomingInvite(null); // Auto-decline when it hits 0
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timerId);
+    }
+  }, [incomingInvite]);
+
   useEffect(() => { if (localPlayer?.pendingRequests) setLocalPending(localPlayer.pendingRequests); }, [localPlayer?.pendingRequests]);
 
   useEffect(() => {
@@ -152,7 +172,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
 
   // --- NEW: SEND INVITATION ACTION ---
   const handleSendInvite = (friendObj) => {
-    if (!socket?.connected) return;
+    if (!socket?.connected || inviteCooldowns[friendObj.id]) return;
     const urlParams = new URLSearchParams(window.location.search);
     const currentRoomId = urlParams.get('room');
     
@@ -165,7 +185,11 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         alert(res.message);
         window.location.href = `?room=${res.redirectRoomId}`;
       } else if (res?.ok) {
-        alert(`Invite sent to ${friendObj.name}!`);
+        // Lock the button for 10 seconds to prevent spam
+        setInviteCooldowns(prev => ({ ...prev, [friendObj.id]: true }));
+        setTimeout(() => {
+          setInviteCooldowns(prev => ({ ...prev, [friendObj.id]: false }));
+        }, 10000);
       }
     });
   };
@@ -192,10 +216,31 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
               <ul className="player-roster">
                 {players.map((player) => {
                   const role = player.id === hostId ? 'Host' : player.isReady ? 'Ready' : 'Waiting';
+                  
+                  // Check friend eligibility
+                  const isSelf = player.id === localPlayerId;
+                  const isAlreadyFriend = localPlayer?.friendsList?.some(f => f.id === player.id);
+                  const isRegistered = localPlayerId?.length > 20 && player.id.length > 20;
+                  const canAddFriend = !isSelf && !isAlreadyFriend && isRegistered;
+
                   return (
                     <li key={player.id} className={player.id === hostId ? 'host-row' : ''}>
                       <span className="player-name">{player.name}</span>
-                      <span className={`player-status ${role.toLowerCase()}`}>{role}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {/* --- NEW: QUICK ADD FRIEND BUTTON --- */}
+                        {canAddFriend && (
+                          <button 
+                            type="button" 
+                            className="primary-button"
+                            style={{ padding: '4px 8px', fontSize: '0.65rem', background: '#d9f0e5' }}
+                            onClick={() => handleSendRequest(player.id)}
+                            title="Add Friend"
+                          >
+                            + Add
+                          </button>
+                        )}
+                        <span className={`player-status ${role.toLowerCase()}`}>{role}</span>
+                      </div>
                     </li>
                   );
                 })}
@@ -245,6 +290,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
             <h2 style={{ color: 'var(--text-plum)', marginTop: 0 }}>Game Invite!</h2>
             <p style={{ fontSize: '1.1rem', margin: '16px 0' }}>
               <strong>{incomingInvite.senderName}</strong> has invited you to join their puzzle room.
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-plum)', fontWeight: 'bold' }}>
+              Auto-declining in {inviteTimer}s...
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '24px' }}>
               <button 
@@ -427,9 +475,21 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                                   Remind
                                 </button>
                               )}
-                              {status !== 'IN_GAME' && status !== 'OFFLINE' && (
-                                <button type="button" className="primary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#d9f0e5' }} onClick={() => handleSendInvite(friendObj)}>
-                                  Invite
+                              {!lobbyPlayer && status !== 'IN_GAME' && status !== 'OFFLINE' && (
+                                <button 
+                                  type="button" 
+                                  className="primary-button" 
+                                  style={{ 
+                                    padding: '6px 10px', 
+                                    fontSize: '0.75rem', 
+                                    background: inviteCooldowns[friendObj.id] ? '#e2e8f0' : '#d9f0e5',
+                                    color: inviteCooldowns[friendObj.id] ? '#64748b' : 'var(--text-navy)',
+                                    cursor: inviteCooldowns[friendObj.id] ? 'default' : 'pointer'
+                                  }} 
+                                  onClick={() => handleSendInvite(friendObj)}
+                                  disabled={inviteCooldowns[friendObj.id]}
+                                >
+                                  {inviteCooldowns[friendObj.id] ? 'Sent' : 'Invite'}
                                 </button>
                               )}
                               <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleViewStats(friendObj)}>Stats</button>
