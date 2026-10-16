@@ -92,13 +92,7 @@ export default class GameEngine {
         this.height = state.boardHeight;
         this.resize();
       }
-      if (Object.keys(state.pieces ?? {}).length > 0 && !this.hasServerPieces) {
-        this.installPieces(state.pieces);
-        this.hasServerPieces = true;
-      } else if (Object.keys(state.pieces ?? {}).length > 0) {
-        this.syncPieceState(state.pieces);
-      } else if (state.status === 'PLAYING' && !this.initialPiecesSent) {
-        // --- NEW: Fix Race Condition! ONLY the Host can generate starting positions ---
+      if (state.status === 'PLAYING' && !this.initialPiecesSent) {
         if (state.hostId === this.playerId) {
           if (this.drawOrder.length === 0) this.regeneratePieces();
           this.publishInitialPieces();
@@ -106,6 +100,30 @@ export default class GameEngine {
       }
       this.onGameState(state);
     };
+
+    this.handleSyncAllPieces = (serverPiecesDict) => {
+      if (Object.keys(serverPiecesDict ?? {}).length > 0) {
+        if (!this.hasServerPieces) {
+          this.installPieces(serverPiecesDict);
+          this.hasServerPieces = true;
+        } else {
+          this.syncPieceState(serverPiecesDict);
+        }
+      }
+    };
+
+    this.handlePiecesUpdated = (updatedPiecesArray) => {
+      for (const update of updatedPiecesArray) {
+        const piece = this.pieces[update.id];
+        if (!piece || this.dragState?.pieceIds.includes(update.id)) continue;
+        piece.x = update.x;
+        piece.y = update.y;
+        piece.groupId = update.groupId;
+        piece.isLockedInFrame = update.isLockedInFrame;
+        piece.placedBy = update.placedBy;
+      }
+    };
+
     this.handleRemoteMovement = ({ pieces = [] } = {}) => {
       for (const update of pieces) {
         const piece = this.pieces[update.id];
@@ -163,6 +181,8 @@ export default class GameEngine {
     this.socket.on('piece_moved', this.handleRemoteMovement);
     this.socket.on('focus_cracker', this.handleFocusCracker);
     this.socket.on('guide_piece_highlight', this.handleGuidePieceHighlight);
+    this.socket.on('sync_all_pieces', this.handleSyncAllPieces);
+    this.socket.on('pieces_updated', this.handlePiecesUpdated);
   }
 
   async start(imageUrl = this.sourceImageUrl ?? '/puzzle-reference.svg') {
@@ -633,5 +653,7 @@ export default class GameEngine {
     window.removeEventListener('resize', this.resize);
     this.resizeObserver?.disconnect();
     if (this.frameId !== null) cancelAnimationFrame(this.frameId);
+    this.socket.off('sync_all_pieces', this.handleSyncAllPieces);
+    this.socket.off('pieces_updated', this.handlePiecesUpdated);
   }
 }

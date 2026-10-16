@@ -12,6 +12,11 @@ const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
 // --- PHASE 2: DYNAMIC ROUTING MAP ---
 const activeMatches = new Map();
 
+function getLightweightState(state) {
+  const { pieces, ...lightState } = state;
+  return lightState;
+}
+
 function createInitialGameState(roomId) {
   return {
     matchId: roomId,
@@ -41,7 +46,10 @@ const powerUpNames = { self_protect: 'Self-Protect', reverse: 'Reverse', offensi
 // --- ROOM-AWARE HELPER FUNCTIONS ---
 function getGameState(socket) { return activeMatches.get(socket.data.roomId); }
 function getPlayer(socket) { const state = getGameState(socket); return state ? state.players[socket.data.playerId] : null; }
-function broadcastGameState(roomId) { const state = activeMatches.get(roomId); if (state) io.to(roomId).emit('game_state', state); }
+function broadcastGameState(roomId) { 
+  const state = activeMatches.get(roomId); 
+  if (state) io.to(roomId).emit('game_state', getLightweightState(state)); 
+}
 
 function broadcastAlert(roomId, text, type = 'purchase') {
   const state = activeMatches.get(roomId);
@@ -147,7 +155,7 @@ function scatterPiece(roomId, piece) {
 
 function stealPlacedPieces(roomId, playerId, amount) {
   const state = activeMatches.get(roomId);
-  if (!state) return 0;
+  if (!state) return [];
   const placed = Object.values(state.pieces).filter((p) => p.placedBy === playerId && p.isLockedInFrame);
   for (let i = placed.length - 1; i > 0; i--) {
     const swap = Math.floor(Math.random() * (i + 1));
@@ -155,7 +163,7 @@ function stealPlacedPieces(roomId, playerId, amount) {
   }
   const stolen = placed.slice(0, amount);
   stolen.forEach(p => scatterPiece(roomId, p));
-  return stolen.length;
+  return stolen; // <-- Now returning the array
 }
 
 function transferAvailablePoints(source, destination, amount) {
@@ -213,10 +221,11 @@ function applyUltimateSteal(roomId, attacker) {
     const stolenPieces = stealPlacedPieces(roomId, attacker.id, 4);
     return { reversed: true, affectedPlayers: 1, stolenPoints, stolenPieces, message: `${reversingPlayer.name} reversed the Ultimate Steal.` };
   }
-  let affectedPlayers = 0; let stolenPoints = 0; let stolenPieces = 0;
+  let affectedPlayers = 0; let stolenPoints = 0; let stolenPieces = [];
   for (const p of others) {
     if (p.isShielded) { p.isShielded = false; continue; }
-    affectedPlayers += 1; stolenPoints += transferAvailablePoints(p, attacker, 4); stolenPieces += stealPlacedPieces(roomId, p.id, 4);
+    affectedPlayers += 1; stolenPoints += transferAvailablePoints(p, attacker, 4); 
+    stolenPieces.push(...stealPlacedPieces(roomId, p.id, 4));
   }
   return { affectedPlayers, stolenPoints, stolenPieces, message: 'Ultimate Steal resolved.' };
 }
@@ -332,7 +341,8 @@ io.on('connection', (socket) => {
     };
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
-    io.to(roomId).emit('game_state', state);
+    io.to(roomId).emit('game_state', getLightweightState(state));
+    socket.emit('sync_all_pieces', state.pieces);
     updateAndBroadcastPresence();
   });
 
@@ -625,6 +635,7 @@ io.on('connection', (socket) => {
     if (!Array.isArray(pieces) || pieces.length === 0 || pieces.length > 500 || !Number.isFinite(boardWidth) || !Number.isFinite(boardHeight)) return;
     state.pieces = Object.fromEntries(pieces.filter((piece) => piece && typeof piece.id === 'string' && Number.isFinite(piece.x) && Number.isFinite(piece.y) && Array.isArray(piece.shapeData?.path)).map((piece) => [piece.id, { ...piece, placedBy: null }]));
     state.boardWidth = boardWidth; state.boardHeight = boardHeight;
+    io.to(socket.data.roomId).emit('sync_all_pieces', state.pieces);
     broadcastGameState(socket.data.roomId);
   });
 
@@ -640,6 +651,7 @@ io.on('connection', (socket) => {
     const previousLockState = new Map((pieces ?? []).map((update) => [update.id, state.pieces[update.id]?.isLockedInFrame ?? false]));
     const updatedPieces = updatePieceSnapshots(socket.data.roomId, pieces, true);
     if (updatedPieces.length === 0) return;
+    io.to(socket.data.roomId).emit('pieces_updated', updatedPieces);
     
     let newlyLockedCount = 0;
     for (const update of pieces ?? []) {
@@ -767,6 +779,7 @@ io.on('connection', (socket) => {
     else if (powerUp === 'ultimate_steal') result = applyUltimateSteal(socket.data.roomId, attacker);
     player.isReversing = false;
     if (result?.message) broadcastAlert(socket.data.roomId, result.message, 'defense');
+    if (result?.stolenPieces?.length > 0) io.to(socket.data.roomId).emit('pieces_updated', result.stolenPieces);
     acknowledge(callback, { ok: true, ...result });
     broadcastGameState(socket.data.roomId);
   });
@@ -796,6 +809,9 @@ io.on('connection', (socket) => {
             if (powerUpType === 'offensive_attack') timeoutResult = applyOffensiveAttack(socket.data.roomId, player, interceptTarget);
             else timeoutResult = applyUltimateSteal(socket.data.roomId, player);
             if (timeoutResult?.message) broadcastAlert(socket.data.roomId, timeoutResult.message);
+            if (timeoutResult?.stolenPieces?.length > 0) {
+              io.to(socket.data.roomId).emit('pieces_updated', timeoutResult.stolenPieces);
+            }
             broadcastGameState(socket.data.roomId);
           }
         }, 5000);
@@ -836,6 +852,7 @@ io.on('connection', (socket) => {
 
     player.inventory.splice(inventoryIndex, 1); player.powerUpUses[powerUpType] += 1;
     if (['offensive_attack', 'ultimate_steal', 'focus_cracker'].includes(powerUpType)) player.stats.attacksUsed += 1;
+    if (result?.stolenPieces?.length > 0) io.to(socket.data.roomId).emit('pieces_updated', result.stolenPieces);
     acknowledge(callback, result);
     const alertType = powerUpType === 'self_protect' ? 'defense' : 'attack';
     broadcastAlert(socket.data.roomId, `${player.name} used ${powerUpNames[powerUpType]}!`, alertType);
