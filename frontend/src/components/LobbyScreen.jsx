@@ -36,6 +36,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   // --- NEW: GLOBAL PRESENCE STATE ---
   const [globalPresence, setGlobalPresence] = useState({});
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
   const hostId = gameState?.hostId ?? null;
@@ -158,7 +161,12 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
       roomId: currentRoomId,
       roomName: `${localPlayer?.name || 'A player'}'s Lobby`
     }, (res) => {
-      if (res?.ok) alert(`Invite sent to ${friendObj.name}!`);
+      if (res?.redirectRoomId) {
+        alert(res.message);
+        window.location.href = `?room=${res.redirectRoomId}`;
+      } else if (res?.ok) {
+        alert(`Invite sent to ${friendObj.name}!`);
+      }
     });
   };
 
@@ -330,6 +338,13 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                   <button type="button" className="copy-id-button" onClick={() => copyCode(localPlayer?.shortId || localPlayerId)}>{playerIdCopied ? 'Copied!' : 'Copy Code'}</button>
                 </div>
                 <button type="button" className="secondary-button" onClick={async () => { await supabase.auth.signOut(); sessionStorage.removeItem('puzzle-party-player-id'); window.location.reload(); }}>Sign Out</button>
+                {localPlayerId.length > 20 && (
+                  <div style={{ marginTop: '24px', borderTop: '1px solid rgba(26, 35, 58, 0.1)', paddingTop: '16px' }}>
+                    <button type="button" className="secondary-button" style={{ background: '#fee2e2', color: '#991b1b', width: '100%' }} onClick={() => setShowDeleteModal(true)}>
+                      Permanently Delete Account
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -408,7 +423,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                             </div>
                             <div style={{ display: 'flex', gap: '6px' }}>
                               {status === 'IN_GAME' && (
-                                <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fef3c7' }} onClick={() => socket.emit('send_reminder', { targetId: friendObj.id })}>
+                                <button type="button" className="secondary-button" style={{ padding: '6px 10px', fontSize: '0.75rem', background: '#fef3c7' }} onClick={() => socket.emit('send_reminder', { targetId: friendObj.id }, () => alert('Reminder sent!'))}>
                                   Remind
                                 </button>
                               )}
@@ -476,6 +491,47 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div className="modal-overlay" style={{ zIndex: 400 }}>
+          <section className="modal-content glass-panel" style={{ textAlign: 'center', padding: '32px' }}>
+            <h2 style={{ color: '#991b1b', marginTop: 0 }}>Delete Account</h2>
+            <p>This action is <strong>permanent</strong> and cannot be undone. All your stats, friends, and data will be wiped immediately.</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-plum)', marginBottom: '8px' }}>Type <strong>Delete Account</strong> below to confirm.</p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Delete Account"
+              style={{ width: '100%', padding: '10px', marginBottom: '16px', borderRadius: '8px', border: '1px solid rgba(26, 35, 58, 0.2)' }}
+            />
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ background: deleteConfirmText === 'Delete Account' ? '#ef4444' : '#ccc', color: '#fff' }}
+                disabled={deleteConfirmText !== 'Delete Account' || !socket?.connected}
+                onClick={() => {
+                  socket.emit('delete_account', {}, async (res) => {
+                    if (res.ok) {
+                      await supabase.auth.signOut();
+                      sessionStorage.removeItem('puzzle-party-player-id');
+                      window.location.reload();
+                    } else {
+                      alert(res.message);
+                    }
+                  });
+                }}
+              >
+                Confirm Delete
+              </button>
+              <button type="button" className="secondary-button" onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}>
+                Cancel
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </main>

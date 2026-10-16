@@ -392,10 +392,11 @@ io.on('connection', (socket) => {
     updateAndBroadcastPresence();
   });
 
-  socket.on('send_reminder', ({ targetId }) => {
+  socket.on('send_reminder', ({ targetId }, callback) => {
     const player = getPlayer(socket);
     if (player && targetId) {
       io.to(targetId).emit('reminder_received', { senderId: player.id, senderName: player.name });
+      if (typeof callback === 'function') callback({ ok: true });
     }
   });
 
@@ -530,11 +531,30 @@ io.on('connection', (socket) => {
     acknowledge(callback, { ok: true, stats: stats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 } });
   });
 
-  socket.on('send_lobby_invite', ({ targetPlayerId, roomId, roomName } = {}, callback) => {
+  socket.on('send_lobby_invite', async ({ targetPlayerId, roomId, roomName } = {}, callback) => {
     const player = getPlayer(socket);
     if (!player || !targetPlayerId) return;
 
-    // Send a real-time invite packet directly to the target player's socket ID/room
+    const inviterState = getGameState(socket);
+    const inviterCount = inviterState ? Object.keys(inviterState.players).length : 1;
+
+    const targetSockets = await io.in(targetPlayerId).fetchSockets();
+    const targetSocket = targetSockets[0];
+    const targetRoomId = targetSocket?.data?.roomId;
+    const targetState = activeMatches.get(targetRoomId);
+    const targetCount = targetState ? Object.keys(targetState.players).length : 0;
+
+    if (inviterCount === 1 && targetCount > 1 && targetRoomId) {
+      if (typeof callback === 'function') {
+        callback({ 
+          ok: false, 
+          redirectRoomId: targetRoomId, 
+          message: `${targetSocket.data.name || 'Friend'} is in a party. Joining their lobby instead!` 
+        });
+      }
+      return;
+    }
+
     io.to(targetPlayerId).emit('lobby_invite_received', {
       senderName: player.name,
       roomId,
@@ -542,6 +562,28 @@ io.on('connection', (socket) => {
     });
 
     if (typeof callback === 'function') callback({ ok: true });
+  });
+
+  socket.on('delete_account', async (_payload, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !supabase || player.id.length <= 20) {
+      if (typeof callback === 'function') callback({ ok: false, message: 'Only registered accounts can be deleted.' });
+      return;
+    }
+
+    try {
+      await supabase.from('friendships').delete().or(`user_id_1.eq.${player.id},user_id_2.eq.${player.id}`);
+      await supabase.from('stats').delete().eq('user_id', player.id);
+      await supabase.from('profiles').delete().eq('id', player.id);
+      
+      await supabase.auth.admin.deleteUser(player.id);
+      
+      if (typeof callback === 'function') callback({ ok: true });
+      socket.disconnect(true);
+    } catch (err) {
+      console.error('Error deleting account:', err);
+      if (typeof callback === 'function') callback({ ok: false, message: 'Failed to delete account.' });
+    }
   });
 
   socket.on('dev_reset_game', () => {

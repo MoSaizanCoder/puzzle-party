@@ -68,7 +68,7 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     return () => {
       isMounted = false;
     };
-  }, [isMicMuted, socket]);
+  }, [isMicMuted, socket, playerCount]);
 
   // 3. WebRTC Signaling Logic
   useEffect(() => {
@@ -187,9 +187,6 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     if (isReady) {
       signalQueue.current.forEach(handleSignal);
       signalQueue.current = [];
-      
-      socket.emit('toggle_ready');
-      socket.emit('toggle_ready'); 
     }
 
     return () => {
