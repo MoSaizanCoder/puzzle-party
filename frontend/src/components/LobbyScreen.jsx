@@ -460,6 +460,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                         const status = globalPresence[friendObj.id] || 'OFFLINE';
                         const statusColors = { ONLINE: '#28784b', IN_LOBBY: '#0284c7', IN_GAME: '#b45309', OFFLINE: 'var(--text-plum)' };
                         const statusLabels = { ONLINE: 'Online', IN_LOBBY: 'In Lobby', IN_GAME: 'In Game', OFFLINE: 'Offline' };
+                        
+                        // Restore the variable that checks if this friend is currently in your local room
+                        const lobbyPlayer = players.find((p) => p.id === friendObj.id);
 
                         return (
                           <li key={friendObj.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
