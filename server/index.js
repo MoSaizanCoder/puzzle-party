@@ -722,7 +722,7 @@ io.on('connection', (socket) => {
               const newHighestStreak = Math.max(p.lifetimeStats.highest_streak || 0, p.stats.highestStreak);
               const newAttacksUsed = (p.lifetimeStats.attacks_used || 0) + p.stats.attacksUsed;
               const newPointsStolen = (p.lifetimeStats.points_stolen || 0) + p.stats.pointsStolen;
-              supabase.from('stats').update({ games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen }).eq('user_id', p.id).then(({ error }) => { if (error) console.error(error); });
+              supabase.from('stats').upsert({ user_id: p.id, games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen }).then(({ error }) => { if (error) console.error(error); });
               p.lifetimeStats = { games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen };
             }
           }
