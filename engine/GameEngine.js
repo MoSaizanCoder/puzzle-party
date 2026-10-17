@@ -35,6 +35,8 @@ export default class GameEngine {
     this.panX = 0;
     this.panY = 0;
     this.latestGameState = initialGameState || null;
+    this.initialPinchDistance = null;
+    this.initialUserZoom = 1;
 
     this.handleWheel = (event) => {
       event.preventDefault();
@@ -156,23 +158,46 @@ export default class GameEngine {
     this.handleMouseMove = this.moveDrag.bind(this);
     this.handleMouseUp = this.endDrag.bind(this);
     this.handleTouchStart = (event) => {
-      // This is attached only to the canvas, so it safely prevents 
-      // the page from scrolling when you try to grab a piece.
       event.preventDefault();
+      if (event.touches.length === 2) {
+        // Detect 2-finger pinch
+        const dx = event.touches[0].clientX - event.touches[1].clientX;
+        const dy = event.touches[0].clientY - event.touches[1].clientY;
+        this.initialPinchDistance = Math.hypot(dx, dy);
+        this.initialUserZoom = this.userZoom;
+        return;
+      }
       this.beginDrag(event);
     };
+
     this.handleTouchMove = (event) => {
-      // ONLY prevent default scrolling if we are actively holding a piece
-      if (this.dragState) {
+      if (event.touches.length === 2 && this.initialPinchDistance) {
         event.preventDefault();
+        const dx = event.touches[0].clientX - event.touches[1].clientX;
+        const dy = event.touches[0].clientY - event.touches[1].clientY;
+        const distance = Math.hypot(dx, dy);
+        
+        // Calculate new zoom based on how far fingers moved apart/together
+        const zoomFactor = distance / this.initialPinchDistance;
+        this.userZoom = Math.max(0.2, Math.min(this.initialUserZoom * zoomFactor, 5));
+        this.viewScale = this.baseScale * this.userZoom;
+        
+        // Apply transformation
+        this.context?.setTransform(
+          this.pixelRatio * this.viewScale, 0, 0,
+          this.pixelRatio * this.viewScale,
+          this.pixelRatio * this.viewOffsetX,
+          this.pixelRatio * this.viewOffsetY,
+        );
+        return;
       }
+      if (this.dragState) event.preventDefault();
       this.moveDrag(event);
     };
+
     this.handleTouchEnd = (event) => {
-      // ONLY intercept the tap if we are actively dropping a piece
-      if (this.dragState) {
-        event.preventDefault();
-      }
+      if (event.touches.length < 2) this.initialPinchDistance = null;
+      if (this.dragState) event.preventDefault();
       this.endDrag(event);
     };
     this.socket.on('disconnect', this.handleSocketDisconnect);

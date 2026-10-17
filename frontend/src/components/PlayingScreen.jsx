@@ -111,6 +111,8 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   // --- NEW: AUDIO & MUSIC STATE ---
   const [sfxEnabled, setSfxEnabled] = useState(isSfxEnabled);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [customMusicUrl, setCustomMusicUrl] = useState('');
+  const [syncTargetId, setSyncTargetId] = useState('');
   const [currentTrack, setCurrentTrack] = useState(0);
   const audioRef = useRef(null);
 
@@ -183,6 +185,45 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       playStreakSound(); // <-- ADD THIS
     }
   }, [gameState?.players]);
+
+  // --- MUSIC SYNC LISTENER ---
+  useEffect(() => {
+    if (!socket) return;
+    
+    // 1. Someone asked to sync with YOU. Send them your current audio data.
+    const handleSyncReq = ({ requesterId }) => {
+      if (audioRef.current) {
+        socket.emit('send_music_sync', {
+          requesterId,
+          musicUrl: audioRef.current.src,
+          currentTime: audioRef.current.currentTime,
+          isPlaying: !audioRef.current.paused
+        });
+      }
+    };
+
+    // 2. You received the audio data from your friend. Apply it to your player.
+    const handleApplySync = ({ musicUrl, currentTime, isPlaying }) => {
+      if (audioRef.current) {
+        setCustomMusicUrl(musicUrl);
+        audioRef.current.src = musicUrl;
+        audioRef.current.currentTime = currentTime;
+        setIsMusicPlaying(isPlaying);
+        if (isPlaying) {
+          audioRef.current.play().catch(e => console.error("Autoplay blocked:", e));
+        }
+        setNotice('Music successfully synced!');
+      }
+    };
+
+    socket.on('music_sync_requested', handleSyncReq);
+    socket.on('apply_music_sync', handleApplySync);
+
+    return () => {
+      socket.off('music_sync_requested', handleSyncReq);
+      socket.off('apply_music_sync', handleApplySync);
+    };
+  }, [socket]);
 
   // --- NEW: Play Power-Up Sounds on Broadcast ---
   useEffect(() => {
@@ -488,24 +529,63 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
               </button>
             </div>
 
-            {/* Music Player */}
+            {/* Music Player & Sync */}
             <div style={{ borderTop: '1px solid rgba(26, 35, 58, 0.1)', paddingTop: '12px', marginTop: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span>Background Music</span>
                 <button type="button" className={isMusicPlaying ? 'primary-button' : 'secondary-button'} onClick={() => setIsMusicPlaying(!isMusicPlaying)} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
-                  {isMusicPlaying ? 'PLAY' : 'STOP'}
+                  {isMusicPlaying ? 'PAUSE' : 'PLAY'}
+                </button>
+              </div>
+
+              {/* Custom URL Input */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                <input 
+                  type="url" 
+                  placeholder="Paste direct .mp3 URL..." 
+                  value={customMusicUrl} 
+                  onChange={(e) => setCustomMusicUrl(e.target.value)} 
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(26,35,58,0.2)', fontSize: '0.75rem', minWidth: 0 }}
+                />
+                <button 
+                  type="button" 
+                  className="primary-button" 
+                  disabled={!customMusicUrl.trim()}
+                  onClick={() => { 
+                    if(audioRef.current) { 
+                      audioRef.current.src = customMusicUrl; 
+                      audioRef.current.play().catch(console.error); 
+                      setIsMusicPlaying(true); 
+                    } 
+                  }}
+                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                >
+                  Load
+                </button>
+              </div>
+
+              {/* Sync Controls */}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(255,255,255,0.6)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <select 
+                  value={syncTargetId} 
+                  onChange={(e) => setSyncTargetId(e.target.value)}
+                  style={{ flex: 1, padding: '4px 6px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid rgba(26,35,58,0.1)' }}
+                >
+                  <option value="">Sync to player...</option>
+                  {targets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button 
+                  type="button" 
+                  className="secondary-button" 
+                  disabled={!syncTargetId || !socket?.connected}
+                  onClick={() => socket.emit('request_music_sync', { targetId: syncTargetId })}
+                  style={{ padding: '4px 10px', fontSize: '0.7rem', fontWeight: 'bold' }}
+                >
+                  Sync
                 </button>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.6)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(26,35,58,0.08)' }}>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px', fontWeight: 'bold', color: 'var(--text-plum)' }}>
-                  🎵 {playlist[currentTrack].name}
-                </span>
-                <button type="button" onClick={nextTrack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', padding: '0 4px' }} title="Next Track">
-                  ⏭️
-                </button>
-              </div>
-              <audio ref={audioRef} src={playlist[currentTrack].url} onEnded={nextTrack} loop={false} />
+              <audio ref={audioRef} loop={true} />
             </div>
 
           </div>

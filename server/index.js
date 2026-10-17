@@ -881,6 +881,19 @@ io.on('connection', (socket) => {
     broadcastGameState(socket.data.roomId);
   });
 
+  socket.on('request_music_sync', ({ targetId } = {}, callback) => {
+    const player = getPlayer(socket);
+    if (!player || !targetId) return;
+    // Tell the target player that someone wants to sync with them
+    io.to(targetId).emit('music_sync_requested', { requesterId: player.id });
+    if (typeof callback === 'function') callback({ ok: true });
+  });
+
+  socket.on('send_music_sync', ({ requesterId, musicUrl, currentTime, isPlaying } = {}) => {
+    // Send the track and timestamp back to the person who asked for it
+    io.to(requesterId).emit('apply_music_sync', { musicUrl, currentTime, isPlaying });
+  });
+
   socket.on('use_powerup', ({ powerUpType, targetId } = {}, callback) => {
     const player = getPlayer(socket); const state = getGameState(socket);
     if (!player || !state || typeof powerUpType !== 'string' || !Object.hasOwn(player.powerUpUses, powerUpType)) return;
