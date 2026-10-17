@@ -562,16 +562,18 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                 </button>
               </div>
               
-              <ReactPlayer 
-                ref={playerRef}
-                url={customMusicUrl}
-                playing={isMusicPlaying}
-                loop={true}
-                width="0"
-                height="0"
-                volume={0.4}
-                config={{ youtube: { playerVars: { origin: typeof window !== 'undefined' ? window.location.origin : '' } } }}
-              />
+              <div style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: '250px', height: '250px', overflow: 'hidden', zIndex: -10 }}>
+                <ReactPlayer 
+                  ref={playerRef}
+                  url={customMusicUrl}
+                  playing={isMusicPlaying}
+                  loop={true}
+                  width="100%"
+                  height="100%"
+                  volume={0.4}
+                  config={{ youtube: { playerVars: { origin: typeof window !== 'undefined' ? window.location.origin : '' } } }}
+                />
+              </div>
             </div>
 
           </div>
