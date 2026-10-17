@@ -48,7 +48,39 @@ function VoiceControl({ icon, label, muted, interactive, onToggle }) {
   );
 }
 
-export default function PlayingScreen({ gameState, onGameState, onLeaveGame, socket, localPlayerId }) {
+function AnimatedScore({ score, streak, isShielded }) {
+  const [animClass, setAnimClass] = useState('');
+  const prev = useRef({ score, isShielded });
+
+  useEffect(() => {
+    let timer;
+    if (score > prev.current.score) {
+      setAnimClass('animate-score-up');
+      timer = setTimeout(() => setAnimClass(''), 500);
+    } else if (score < prev.current.score) {
+      setAnimClass('animate-score-down');
+      timer = setTimeout(() => setAnimClass(''), 500);
+    } else if (prev.current.isShielded && !isShielded) {
+      // Shield was broken
+      setAnimClass('animate-shield-pop');
+      timer = setTimeout(() => setAnimClass(''), 500);
+    }
+    
+    prev.current = { score, isShielded };
+    return () => clearTimeout(timer);
+  }, [score, isShielded]);
+
+  return (
+    <span 
+      className={`player-score ${animClass}`} 
+      style={{ display: 'inline-block', transformOrigin: 'right center', transition: 'color 0.2s' }}
+    >
+      {score} Pts · 🔥{streak}
+    </span>
+  );
+}
+
+export default function PlayingScreen({ gameState, onGameState, onLeaveGame, socket, localPlayerId, voiceVolume, setVoiceVolume }) {
   const players = Object.values(gameState?.players ?? {});
   const currentPlayer = players.find((player) => player.id === localPlayerId);
   const targets = players.filter((player) => player.id !== localPlayerId);
@@ -309,7 +341,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                       />
                     </div>
                   </div>
-                  <span className="player-score">{player.score} Pts · 🔥{player.streak} </span>
+                  <AnimatedScore score={player.score} streak={player.streak} isShielded={player.isShielded} />
                 </li>
               ))}
             </ul>

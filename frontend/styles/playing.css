@@ -371,16 +371,16 @@
 
 .broadcast-alert {
   position: absolute;
-  top: 20%;
+  top: 15%; /* Moved up slightly */
   left: 50%;
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 16px;
-  max-width: min(90vw, 720px);
-  padding: 16px 32px;
-  border-radius: 16px;
-  font-size: 2rem;
+  gap: 12px;
+  max-width: min(90vw, 420px); /* Much smaller max-width */
+  padding: 10px 20px; /* Reduced padding */
+  border-radius: 12px;
+  font-size: 1.15rem; /* Reduced from 2rem */
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -388,12 +388,19 @@
   pointer-events: none;
   transform: translate(-50%, -50%);
   animation: alert-slam 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
 }
 
 .alert-icon {
-  font-size: 2.5rem;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+  font-size: 1.5rem; /* Reduced from 2.5rem */
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+@media (max-width: 520px) {
+  .broadcast-alert {
+    padding: 8px 14px;
+    font-size: 1rem;
+  }
 }
 
 .alert-attack {
@@ -588,3 +595,27 @@
     flex-basis: 180px; 
   }
 }
+
+/* --- SCORE & COMBAT ANIMATIONS --- */
+@keyframes score-up {
+  0% { transform: scale(1); color: inherit; }
+  50% { transform: scale(1.35); color: #22c55e; }
+  100% { transform: scale(1); color: inherit; }
+}
+
+@keyframes score-down {
+  0% { transform: scale(1) translateX(0); color: inherit; }
+  25% { transform: scale(1.25) translateX(-4px); color: #ef4444; }
+  75% { transform: scale(1.25) translateX(4px); color: #ef4444; }
+  100% { transform: scale(1) translateX(0); color: inherit; }
+}
+
+@keyframes shield-pop {
+  0% { transform: scale(1); color: inherit; text-shadow: none; }
+  50% { transform: scale(1.3); color: #3b82f6; text-shadow: 0 0 12px #93c5fd; }
+  100% { transform: scale(1); color: inherit; text-shadow: none; }
+}
+
+.animate-score-up { animation: score-up 0.5s ease-out; }
+.animate-score-down { animation: score-down 0.5s ease-out; }
+.animate-shield-pop { animation: shield-pop 0.5s ease-out; }
