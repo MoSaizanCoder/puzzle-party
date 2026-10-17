@@ -474,7 +474,7 @@
 /* Floating Rules Button & Modal */
 .rules-toggle-btn {
   position: absolute;
-  bottom: 24px;
+  top: 24px;
   left: 24px;
   z-index: 40;
   width: 52px;
@@ -584,7 +584,7 @@
   }
 
   .rules-toggle-btn {
-    bottom: 16px;
+    top: 16px;
     left: 16px;
     width: 44px;
     height: 44px;

@@ -271,7 +271,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       <div 
         className="glass-panel"
         style={{ 
-          position: 'absolute', bottom: '24px', left: '90px', zIndex: 40, width: '52px', height: '52px', 
+          position: 'absolute', top: '24px', left: '90px', zIndex: 40, width: '52px', height: '52px', 
           borderRadius: '12px', border: '2px solid rgba(255,255,255,0.8)', cursor: 'pointer', 
           backgroundImage: `url(${gameState?.puzzleImageSrc || '/puzzle-reference.svg'})`, 
           backgroundSize: 'cover', backgroundPosition: 'center', boxShadow: '0 8px 24px rgba(26, 35, 58, 0.15)',

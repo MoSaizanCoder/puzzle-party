@@ -169,13 +169,17 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     const handleGameState = (state) => {
       if (!localStream.current) return; 
 
-      // Only attempt to connect to players who are actively in the game
-      const incomingIds = Object.keys(state.players).filter(id => id !== localPlayerId && state.players[id].isPlaying);
+      const isMePlaying = state.players[localPlayerId]?.isPlaying;
+
+      // Connect to players who are in the same phase as you (both in lobby, or both in game)
+      const incomingIds = Object.keys(state.players).filter(id => 
+        id !== localPlayerId && state.players[id].isPlaying === isMePlaying
+      );
       
       Object.keys(peers.current).forEach(existingId => {
-        // If they left the server OR dropped back to the lobby (isPlaying = false), kill the connection
-        if (!state.players[existingId] || !state.players[existingId].isPlaying) {
-          console.log(`🧹 Cleaning up disconnected peer: ${existingId}`);
+        // Clean up if they left the room completely OR if they are in a different phase
+        if (!state.players[existingId] || state.players[existingId].isPlaying !== isMePlaying) {
+          console.log(`🧹 Cleaning up out-of-phase peer: ${existingId}`);
           peers.current[existingId].close();
           delete peers.current[existingId];
           delete pendingCandidates.current[existingId];
