@@ -340,7 +340,7 @@ io.on('connection', (socket) => {
       isSpeakerMuted: false,
       isSpeaking: false,
       stats: { highestStreak: 0, attacksUsed: 0, pointsStolen: 0 },
-      lifetimeStats: dbStats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0 }
+      lifetimeStats: dbStats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0, total_score: 0 }
     };
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
@@ -557,32 +557,49 @@ io.on('connection', (socket) => {
     }
     
     try {
-      // Fetch top 50 players sorted by total wins
+      // Fetch all player stats to calculate the composite score dynamically
       const { data, error } = await supabase
         .from('stats')
         .select(`
           total_wins,
           highest_streak,
           games_played,
+          attacks_used,
+          points_stolen,
+          total_score,
           user_id,
           profiles ( display_name, short_id )
-        `)
-        .order('total_wins', { ascending: false })
-        .limit(50);
+        `);
 
       if (error) throw error;
 
-      // Format it cleanly for the frontend
-      const leaderboard = data.map((row) => ({
-        id: row.user_id,
-        name: row.profiles?.display_name || 'Unknown',
-        shortId: row.profiles?.short_id || '----',
-        wins: row.total_wins || 0,
-        streak: row.highest_streak || 0,
-        gamesPlayed: row.games_played || 0
-      }));
+      // Calculate the composite "Rank Score" for each player
+      const leaderboard = data.map((row) => {
+        const wins = row.total_wins || 0;
+        const attacks = row.attacks_used || 0;
+        const stolen = row.points_stolen || 0;
+        const rawScore = row.total_score || 0;
+        
+        // Custom Weighting Algorithm:
+        // Wins = 50 pts, Stolen Points = 2 pts, Attacks = 1 pt, + Lifetime Raw Score
+        const rankScore = (wins * 50) + (stolen * 2) + attacks + rawScore;
 
-      if (typeof callback === 'function') callback({ ok: true, leaderboard });
+        return {
+          id: row.user_id,
+          name: row.profiles?.display_name || 'Unknown',
+          shortId: row.profiles?.short_id || '----',
+          wins,
+          streak: row.highest_streak || 0,
+          gamesPlayed: row.games_played || 0,
+          rankScore
+        };
+      });
+
+      // Sort highest to lowest based on the new rankScore, then take the top 50
+      leaderboard.sort((a, b) => b.rankScore - a.rankScore);
+      const top50 = leaderboard.slice(0, 50);
+
+      if (typeof callback === 'function') callback({ ok: true, leaderboard: top50 });
     } catch (err) {
       console.error('Leaderboard error:', err);
       if (typeof callback === 'function') callback({ ok: false, message: 'Failed to load leaderboard.' });
@@ -720,19 +737,35 @@ io.on('connection', (socket) => {
       if (allShareGroup || allLocked) {
         state.status = 'GAMEOVER';
         if (supabase) {
-          const calculateTotal = (p) => (p.score || 0) + (p.stats.attacksUsed || 0);
           const playersList = Object.values(state.players).filter(p => p.isPlaying);
-          const sorted = [...playersList].sort((a, b) => calculateTotal(b) - calculateTotal(a));
-          const winnerId = sorted[0]?.id;
-          for (const p of playersList) {
-            if (p.id.length > 20) {
-              const newGamesPlayed = (p.lifetimeStats.games_played || 0) + 1;
-              const newTotalWins = (p.lifetimeStats.total_wins || 0) + (p.id === winnerId ? 1 : 0);
-              const newHighestStreak = Math.max(p.lifetimeStats.highest_streak || 0, p.stats.highestStreak);
-              const newAttacksUsed = (p.lifetimeStats.attacks_used || 0) + p.stats.attacksUsed;
-              const newPointsStolen = (p.lifetimeStats.points_stolen || 0) + p.stats.pointsStolen;
-              supabase.from('stats').upsert({ user_id: p.id, games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen }).then(({ error }) => { if (error) console.error(error); });
-              p.lifetimeStats = { games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen };
+          
+          // ONLY save stats if there are 2 or more players (Multiplayer match)
+          if (playersList.length > 1) {
+            const calculateTotal = (p) => (p.score || 0) + (p.stats.attacksUsed || 0);
+            const sorted = [...playersList].sort((a, b) => calculateTotal(b) - calculateTotal(a));
+            const winnerId = sorted[0]?.id;
+            
+            for (const p of playersList) {
+              if (p.id.length > 20) {
+                const newGamesPlayed = (p.lifetimeStats.games_played || 0) + 1;
+                const newTotalWins = (p.lifetimeStats.total_wins || 0) + (p.id === winnerId ? 1 : 0);
+                const newHighestStreak = Math.max(p.lifetimeStats.highest_streak || 0, p.stats.highestStreak);
+                const newAttacksUsed = (p.lifetimeStats.attacks_used || 0) + p.stats.attacksUsed;
+                const newPointsStolen = (p.lifetimeStats.points_stolen || 0) + p.stats.pointsStolen;
+                const newTotalScore = (p.lifetimeStats.total_score || 0) + p.score; // Track their raw score
+                
+                supabase.from('stats').upsert({ 
+                  user_id: p.id, 
+                  games_played: newGamesPlayed, 
+                  total_wins: newTotalWins, 
+                  highest_streak: newHighestStreak, 
+                  attacks_used: newAttacksUsed, 
+                  points_stolen: newPointsStolen,
+                  total_score: newTotalScore
+                }).then(({ error }) => { if (error) console.error(error); });
+                
+                p.lifetimeStats = { games_played: newGamesPlayed, total_wins: newTotalWins, highest_streak: newHighestStreak, attacks_used: newAttacksUsed, points_stolen: newPointsStolen, total_score: newTotalScore };
+              }
             }
           }
         }

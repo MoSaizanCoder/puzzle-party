@@ -611,8 +611,8 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
                               </div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: 'bold', color: 'var(--shield-green)' }}>{player.wins} Wins</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-navy)' }}>🔥 {player.streak}</div>
+                              <div style={{ fontWeight: 'bold', color: 'var(--shield-green)' }}>{player.rankScore} Pts</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-navy)' }}>{player.wins} Wins · 🔥 {player.streak}</div>
                             </div>
                           </li>
                         );
