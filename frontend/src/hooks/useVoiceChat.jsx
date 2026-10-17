@@ -169,10 +169,12 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     const handleGameState = (state) => {
       if (!localStream.current) return; 
 
-      const incomingIds = Object.keys(state.players).filter(id => id !== localPlayerId);
+      // Only attempt to connect to players who are actively in the game
+      const incomingIds = Object.keys(state.players).filter(id => id !== localPlayerId && state.players[id].isPlaying);
       
       Object.keys(peers.current).forEach(existingId => {
-        if (!state.players[existingId]) {
+        // If they left the server OR dropped back to the lobby (isPlaying = false), kill the connection
+        if (!state.players[existingId] || !state.players[existingId].isPlaying) {
           console.log(`🧹 Cleaning up disconnected peer: ${existingId}`);
           peers.current[existingId].close();
           delete peers.current[existingId];

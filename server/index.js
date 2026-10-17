@@ -349,27 +349,43 @@ io.on('connection', (socket) => {
     updateAndBroadcastPresence();
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     const { playerId, roomId } = socket.data;
     if (!playerId || !roomId) return;
     const state = activeMatches.get(roomId);
     if (!state) return;
 
     const wasHost = state.hostId === playerId;
-    delete state.players[playerId];
+    
+    // Only delete their profile completely if they disconnect from the Lobby
+    if (state.status === 'LOBBY') {
+      delete state.players[playerId];
+    } else if (state.players[playerId]) {
+      // If mid-game, just mark them as inactive so they trigger the Rejoin popup
+      state.players[playerId].isPlaying = false;
+    }
 
-    const activePlayers = Object.values(state.players).filter(p => p.isPlaying);
-    if (Object.keys(state.players).length === 0) {
-      activeMatches.delete(roomId); // Clean up the room when empty
-      return;
-    } else if (activePlayers.length === 0 && state.status !== 'LOBBY') {
-      state.hostId = null;
-      resetGame(roomId);
+    const connectedSockets = await io.in(roomId).fetchSockets();
+    
+    // Clean up the room only if ZERO active websockets remain
+    if (connectedSockets.length === 0) {
+      activeMatches.delete(roomId);
       return;
     }
 
     if (wasHost || (state.hostId && !state.players[state.hostId])) reassignHostIfNeeded(roomId);
     broadcastGameState(roomId);
+    updateAndBroadcastPresence();
+  });
+
+  socket.on('rejoin_game', (_payload = {}, callback) => {
+    const player = getPlayer(socket);
+    const state = getGameState(socket);
+    if (!player || !state || state.status !== 'PLAYING') return;
+    
+    player.isPlaying = true; // Drop them back into the action
+    acknowledge(callback, { ok: true });
+    broadcastGameState(socket.data.roomId);
     updateAndBroadcastPresence();
   });
 
