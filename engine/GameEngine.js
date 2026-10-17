@@ -666,7 +666,6 @@ export default class GameEngine {
   destroy() {
     this.destroyed = true;
     this.removeInputListeners();
-    this.socket.off('connect', this.handleSocketConnect);
     this.socket.off('disconnect', this.handleSocketDisconnect);
     this.socket.off('force_reset', this.handleForceReset);
     this.socket.off('game_state', this.handleGameState);

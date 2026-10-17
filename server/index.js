@@ -734,12 +734,6 @@ io.on('connection', (socket) => {
     updateAndBroadcastPresence();
   });
 
-  socket.on('return_to_lobby', () => {
-    const player = getPlayer(socket); const state = getGameState(socket);
-    if (!player || !state || state.hostId !== player.id) return;
-    resetGame(socket.data.roomId);
-  });
-
   socket.on('initialize_pieces', ({ pieces, boardWidth, boardHeight } = {}) => {
     const state = getGameState(socket);
     if (!state) return;
@@ -910,19 +904,6 @@ io.on('connection', (socket) => {
     if (result?.stolenPieces?.length > 0) io.to(socket.data.roomId).emit('pieces_updated', result.stolenPieces);
     acknowledge(callback, { ok: true, ...result });
     broadcastGameState(socket.data.roomId);
-  });
-
-  socket.on('request_music_sync', ({ targetId } = {}, callback) => {
-    const player = getPlayer(socket);
-    if (!player || !targetId) return;
-    // Tell the target player that someone wants to sync with them
-    io.to(targetId).emit('music_sync_requested', { requesterId: player.id });
-    if (typeof callback === 'function') callback({ ok: true });
-  });
-
-  socket.on('send_music_sync', ({ requesterId, musicUrl, currentTime, isPlaying } = {}) => {
-    // Send the track and timestamp back to the person who asked for it
-    io.to(requesterId).emit('apply_music_sync', { musicUrl, currentTime, isPlaying });
   });
 
   socket.on('use_powerup', ({ powerUpType, targetId } = {}, callback) => {
