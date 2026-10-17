@@ -252,24 +252,26 @@ io.on('connection', (socket) => {
   socket.on('join_game', async ({ playerId, name, roomId } = {}) => {
     if (typeof playerId !== 'string' || !roomId) return;
 
-    // --- NEW: MULTI-TAB & DUPLICATE LOGIN PREVENTION ---
-    // Check if any active websockets are already using this Player ID
+    // 1. SECURE THE NEW CONNECTION FIRST
+    socket.data.playerId = playerId;
+    socket.data.roomId = roomId;
+    socket.join(playerId); 
+    socket.join(roomId);   
+
+    // 2. CLEAN UP OLD GHOST TABS
     const existingSockets = await io.in(playerId).fetchSockets();
-    if (existingSockets.length > 0) {
-      // Forcibly disconnect the old "ghost" sockets so the reload succeeds
-      existingSockets.forEach(oldSocket => {
+    const ghostSockets = existingSockets.filter(s => s.id !== socket.id);
+    if (ghostSockets.length > 0) {
+      ghostSockets.forEach(oldSocket => {
         oldSocket.emit('lobby_error', { message: 'Session refreshed.' });
         oldSocket.disconnect(true);
       });
     }
 
-    socket.data.playerId = playerId;
-    socket.data.roomId = roomId;
-    socket.join(playerId); // Critical for WebRTC targeted signaling
-    socket.join(roomId);   // Critical for Room-based isolation
-
     if (!activeMatches.has(roomId)) activeMatches.set(roomId, createInitialGameState(roomId));
     const state = activeMatches.get(roomId);
+    
+    // ... keep the rest of the profile fetching logic exactly as is ...
 
     const currentPlayersCount = Object.keys(state.players).length;
     if (currentPlayersCount >= 4 && !state.players[playerId]) {
@@ -355,30 +357,34 @@ io.on('connection', (socket) => {
     const state = activeMatches.get(roomId);
     if (!state) return;
 
-    const wasHost = state.hostId === playerId;
-    
-    if (state.status === 'LOBBY') {
-      delete state.players[playerId]; // Safe to wipe if game hasn't started
-    } else if (state.players[playerId]) {
-      state.players[playerId].isPlaying = false; // Drop to lobby on refresh, DO NOT delete
-    }
+    // Check if the player has ANOTHER active socket in this exact room (e.g. they just refreshed)
+    const allSocketsInRoom = await io.in(roomId).fetchSockets();
+    const hasOtherSocketsInRoom = allSocketsInRoom.some(s => s.data.playerId === playerId && s.id !== socket.id);
 
-    const connectedSockets = await io.in(roomId).fetchSockets();
-    
-    if (connectedSockets.length === 0) {
-      // 10-second grace period so the room isn't destroyed during a quick page refresh
-      setTimeout(async () => {
-        const checkSockets = await io.in(roomId).fetchSockets();
-        if (checkSockets.length === 0) {
-          activeMatches.delete(roomId);
-        }
-      }, 10000);
-      return;
-    }
+    // ONLY process deletion if they are completely gone
+    if (!hasOtherSocketsInRoom) {
+      const wasHost = state.hostId === playerId;
+      
+      if (state.status === 'LOBBY') {
+        delete state.players[playerId]; 
+      } else if (state.players[playerId]) {
+        state.players[playerId].isPlaying = false; 
+        state.players[playerId].isReady = false;
+      }
 
-    if (wasHost || (state.hostId && !state.players[state.hostId])) reassignHostIfNeeded(roomId);
-    broadcastGameState(roomId);
-    updateAndBroadcastPresence();
+      const activePlayers = Object.keys(state.players);
+      if (activePlayers.length === 0) {
+        setTimeout(async () => {
+          const checkSockets = await io.in(roomId).fetchSockets();
+          if (checkSockets.length === 0) activeMatches.delete(roomId);
+        }, 10000);
+        return;
+      }
+
+      if (wasHost || (state.hostId && !state.players[state.hostId])) reassignHostIfNeeded(roomId);
+      broadcastGameState(roomId);
+      updateAndBroadcastPresence();
+    }
   });
 
   socket.on('rejoin_game', (_payload, callback) => {

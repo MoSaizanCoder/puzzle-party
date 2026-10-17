@@ -97,8 +97,8 @@ function randomPosition(width, height, cellWidth, cellHeight, depth, occupied, r
 }
 
 export function generatePuzzlePieces(image, canvasWidth, canvasHeight, options = {}) {
-  // 1. Enforce higher density (14 columns creates roughly 70-120 pieces depending on ratio)
-  const columns = options.columns ?? 10; 
+  // 1. Enforce higher density (7 columns creates roughly 70-120 pieces depending on ratio)
+  const columns = options.columns ?? 7; 
   
   // 2. Calculate rows strictly based on aspect ratio so pieces remain uniform and square-ish
   const rows = options.rows ?? Math.max(4, Math.round(columns * (image.naturalHeight / image.naturalWidth)));
