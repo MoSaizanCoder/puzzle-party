@@ -126,6 +126,12 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     };
 
     const processSignal = async (senderId, signal) => {
+      // --- ADD THIS OVERRIDE BLOCK ---
+      if (signal.type === 'offer' && peers.current[senderId]) {
+        peers.current[senderId].close();
+        delete peers.current[senderId];
+      }
+
       let peer = peers.current[senderId];
       if (!peer) peer = createPeer(senderId, false);
 
@@ -159,16 +165,12 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
     };
 
     const handleSignal = (data) => {
-      if (!localStream.current) {
-        signalQueue.current.push(data);
-        return;
-      }
+      // Pass immediately so muted players can still receive audio
       processSignal(data.senderId, data.signal);
     };
 
     const handleGameState = (state) => {
-      if (!localStream.current) return; 
-
+      // Removed the localStream block here as well
       const isMePlaying = state.players[localPlayerId]?.isPlaying;
 
       // Connect to players who are in the same phase as you (both in lobby, or both in game)
@@ -198,19 +200,29 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
       });
     };
 
+    const handlePeerReconnected = ({ playerId: reconnectedId }) => {
+      if (peers.current[reconnectedId]) {
+        peers.current[reconnectedId].close();
+        delete peers.current[reconnectedId];
+        delete pendingCandidates.current[reconnectedId];
+        setStreams(prev => {
+          const next = { ...prev };
+          delete next[reconnectedId];
+          return next;
+        });
+      }
+    };
+
     socket.on('webrtc_signal', handleSignal);
     socket.on('game_state', handleGameState);
-
-    if (isReady) {
-      signalQueue.current.forEach(handleSignal);
-      signalQueue.current = [];
-    }
+    socket.on('peer_reconnected', handlePeerReconnected);
 
     return () => {
       socket.off('webrtc_signal', handleSignal);
       socket.off('game_state', handleGameState);
+      socket.off('peer_reconnected', handlePeerReconnected);
     };
-  }, [socket, localPlayerId, isReady]);
+  }, [socket, localPlayerId]); // Removed isReady from dependencies
 
   // 4. Return Audio Elements
   return Object.entries(streams).map(([peerId, stream]) => (

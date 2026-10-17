@@ -273,7 +273,11 @@ io.on('connection', (socket) => {
     socket.data.playerId = playerId;
     socket.data.roomId = roomId;
     socket.join(playerId); 
-    socket.join(roomId);   
+    socket.join(roomId);
+    
+    // --- ADD THIS NEW LINE ---
+    // Tell existing clients to tear down any dead WebRTC peers for this player
+    socket.to(roomId).emit('peer_reconnected', { playerId });
 
     // 3. CLEAN UP OLD SOCKETS IN THIS EXACT ROOM
     const existingSockets = await io.in(playerId).fetchSockets();
