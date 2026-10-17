@@ -80,7 +80,7 @@ function AnimatedScore({ score, streak, isShielded }) {
   );
 }
 
-export default function PlayingScreen({ gameState, onGameState, onLeaveGame, socket, localPlayerId, voiceVolume, setVoiceVolume }) {
+export default function PlayingScreen({ gameState, onGameState, onLeaveGame, socket, localPlayerId, peerVolumes, setPeerVolumes }) {
   const players = Object.values(gameState?.players ?? {});
   const currentPlayer = players.find((player) => player.id === localPlayerId);
   const targets = players.filter((player) => player.id !== localPlayerId);
@@ -94,6 +94,19 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   const cooldownUntil = gameState?.triviaCooldownUntil;
   const chatListRef = useRef(null);
   const previousStreaks = useRef(null);
+
+  const [activeVolumePopup, setActiveVolumePopup] = useState(null);
+
+  // Close the popup if clicking anywhere outside of it
+  useEffect(() => {
+    const handleClickOutside = () => setActiveVolumePopup(null);
+    if (activeVolumePopup) window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [activeVolumePopup]);
+
+  const handleVolumeChange = (peerId, value) => {
+    setPeerVolumes(prev => ({ ...prev, [peerId]: parseFloat(value) }));
+  };
 
   // --- NEW: AUDIO & MUSIC STATE ---
   const [sfxEnabled, setSfxEnabled] = useState(isSfxEnabled);
@@ -327,18 +340,43 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                     <div className="voice-controls" aria-label={`${player.name} voice status`}>
                       <VoiceControl
                         icon="🎙"
-                        label={player.isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                        label={player.isMicMuted ? 'Microphone muted' : 'Microphone active'}
                         muted={player.isMicMuted}
                         interactive={player.id === localPlayerId}
                         onToggle={() => updateVoiceState('isMicMuted', player.isMicMuted)}
                       />
-                      <VoiceControl
-                        icon="🔊"
-                        label={player.isSpeakerMuted ? 'Unmute speaker' : 'Mute speaker'}
-                        muted={player.isSpeakerMuted}
-                        interactive={player.id === localPlayerId}
-                        onToggle={() => updateVoiceState('isSpeakerMuted', player.isSpeakerMuted)}
-                      />
+                      
+                      {player.id === localPlayerId ? (
+                        <VoiceControl
+                          icon="🔊"
+                          label={player.isSpeakerMuted ? 'Unmute speaker' : 'Mute speaker'}
+                          muted={player.isSpeakerMuted}
+                          interactive={true}
+                          onToggle={() => updateVoiceState('isSpeakerMuted', player.isSpeakerMuted)}
+                        />
+                      ) : (
+                        <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                          <VoiceControl
+                            icon="🔊"
+                            label={`Adjust ${player.name}'s volume`}
+                            muted={(peerVolumes[player.id] !== undefined ? peerVolumes[player.id] : 0.8) === 0}
+                            interactive={true}
+                            onToggle={() => setActiveVolumePopup(activeVolumePopup === player.id ? null : player.id)}
+                          />
+                          
+                          {activeVolumePopup === player.id && (
+                            <div className="volume-popup">
+                              <input 
+                                type="range" min="0" max="1" step="0.05" 
+                                value={peerVolumes[player.id] !== undefined ? peerVolumes[player.id] : 0.8} 
+                                onChange={(e) => handleVolumeChange(player.id, e.target.value)} 
+                                style={{ width: '80px', accentColor: 'var(--shield-green)', margin: 0 }} 
+                                title={`${Math.round((peerVolumes[player.id] !== undefined ? peerVolumes[player.id] : 0.8) * 100)}%`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <AnimatedScore score={player.score} streak={player.streak} isShielded={player.isShielded} />
@@ -448,18 +486,6 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
               <button type="button" className={sfxEnabled ? 'primary-button' : 'secondary-button'} onClick={handleSfxToggle} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
                 {sfxEnabled ? 'ON' : 'OFF'}
               </button>
-            </div>
-            
-            {/* Friends Voice Volume Slider */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Friends Voice Volume</span>
-              <input 
-                type="range" min="0" max="1" step="0.05" 
-                value={voiceVolume} 
-                onChange={(e) => setVoiceVolume(parseFloat(e.target.value))} 
-                style={{ width: '90px', accentColor: 'var(--shield-green)' }} 
-                title={`${Math.round(voiceVolume * 100)}%`}
-              />
             </div>
 
             {/* Music Player */}

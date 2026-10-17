@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Add playerCount to the parameters
-export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeakerMuted, playerCount, voiceVolume = 0.8) {
+export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeakerMuted, playerCount, peerVolumes = {}) {
   const [streams, setStreams] = useState({});
   const audioRefs = useRef({});
 
-  // Dynamically update volume whenever the slider changes
+  // Dynamically update volume whenever any individual slider changes
   useEffect(() => {
-    Object.values(audioRefs.current).forEach(audioEl => {
-      if (audioEl) audioEl.volume = voiceVolume;
+    Object.entries(audioRefs.current).forEach(([peerId, audioEl]) => {
+      if (audioEl) {
+        const vol = peerVolumes[peerId];
+        audioEl.volume = vol !== undefined ? vol : 0.8;
+      }
     });
-  }, [voiceVolume]);
+  }, [peerVolumes]);
   const localStream = useRef(null);
   const peers = useRef({});
   const pendingCandidates = useRef({});
@@ -217,7 +220,7 @@ export default function useVoiceChat(socket, localPlayerId, isMicMuted, isSpeake
             el.srcObject = stream; 
             el.play().catch(e => console.warn(`🛑 Autoplay blocked for ${peerId}.`, e));
           }
-          el.volume = voiceVolume; // Set initial volume
+          el.volume = peerVolumes[peerId] !== undefined ? peerVolumes[peerId] : 0.8; // Set initial volume
         } 
       }} 
     />

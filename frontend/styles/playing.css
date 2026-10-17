@@ -596,6 +596,27 @@
   }
 }
 
+/* --- FLOATING VOLUME POPUP --- */
+.volume-popup {
+  position: absolute;
+  bottom: 110%;
+  right: 0;
+  background: rgba(253, 251, 247, 0.95);
+  border: 1px solid rgba(26, 35, 58, 0.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(26, 35, 58, 0.15);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  animation: popup-in 0.15s ease-out forwards;
+}
+
+@keyframes popup-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* --- SCORE & COMBAT ANIMATIONS --- */
 @keyframes score-up {
   0% { transform: scale(1); color: inherit; }
