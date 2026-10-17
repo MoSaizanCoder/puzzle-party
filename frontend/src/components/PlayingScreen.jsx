@@ -113,6 +113,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   const [sfxEnabled, setSfxEnabled] = useState(isSfxEnabled);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [customMusicUrl, setCustomMusicUrl] = useState('');
+  const [activeMusicUrl, setActiveMusicUrl] = useState('');
   const [syncTargetId, setSyncTargetId] = useState('');
   const playerRef = useRef(null);
 
@@ -174,12 +175,12 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   useEffect(() => {
     if (!socket) return;
     
-    // 1. Someone asked to sync with YOU. Send them your current URL and timestamp.
+    // 1. Someone asked to sync with YOU. Send them your current active URL.
     const handleSyncReq = ({ requesterId }) => {
       if (playerRef.current) {
         socket.emit('send_music_sync', {
           requesterId,
-          musicUrl: customMusicUrl,
+          musicUrl: activeMusicUrl, // <-- Use activeMusicUrl
           currentTime: playerRef.current.getCurrentTime(),
           isPlaying: isMusicPlaying
         });
@@ -189,6 +190,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
     // 2. You received the audio data from your friend. Apply it to your player.
     const handleApplySync = ({ musicUrl, currentTime, isPlaying }) => {
       setCustomMusicUrl(musicUrl);
+      setActiveMusicUrl(musicUrl); // <-- Set the active URL to trigger the player
       setIsMusicPlaying(isPlaying);
       
       // Slight delay ensures the new YouTube iframe is loaded before seeking
@@ -206,7 +208,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       socket.off('music_sync_requested', handleSyncReq);
       socket.off('apply_music_sync', handleApplySync);
     };
-  }, [socket, customMusicUrl, isMusicPlaying]);
+  }, [socket, activeMusicUrl, isMusicPlaying]); // <-- Update dependencies
 
   // --- NEW: Play Power-Up Sounds on Broadcast ---
   useEffect(() => {
@@ -534,7 +536,10 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                   type="button" 
                   className="primary-button" 
                   disabled={!customMusicUrl.trim()}
-                  onClick={() => setIsMusicPlaying(true)}
+                  onClick={() => {
+                    setActiveMusicUrl(customMusicUrl); // <-- Move the URL into the player only on click
+                    setIsMusicPlaying(true);
+                  }}
                   style={{ padding: '6px 10px', fontSize: '0.75rem' }}
                 >
                   Load
@@ -562,10 +567,11 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                 </button>
               </div>
               
-              <div style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: '250px', height: '250px', overflow: 'hidden', zIndex: -10 }}>
+              {/* Push the player off-screen so YouTube's visibility checks pass, but it remains unseen */}
+              <div style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '300px', height: '300px', pointerEvents: 'none', zIndex: -10 }}>
                 <ReactPlayer 
                   ref={playerRef}
-                  url={customMusicUrl}
+                  url={activeMusicUrl} // <-- Now it uses the safe, isolated URL
                   playing={isMusicPlaying}
                   loop={true}
                   width="100%"
