@@ -342,12 +342,6 @@ io.on('connection', (socket) => {
       stats: { highestStreak: 0, attacksUsed: 0, pointsStolen: 0 },
       lifetimeStats: dbStats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0, total_score: 0 }
     };
-    
-    // Force reconnecting players seamlessly back into the active board
-    if (state.status !== 'LOBBY' && state.players[playerId]) {
-      state.players[playerId].isPlaying = true;
-      state.players[playerId].isReady = true;
-    }
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
     io.to(roomId).emit('game_state', getLightweightState(state));
@@ -363,15 +357,22 @@ io.on('connection', (socket) => {
 
     const wasHost = state.hostId === playerId;
     
-    // If the game hasn't started, delete them.
-    // If mid-game, keep their data so they instantly auto-rejoin on refresh.
     if (state.status === 'LOBBY') {
-      delete state.players[playerId];
+      delete state.players[playerId]; // Safe to wipe if game hasn't started
+    } else if (state.players[playerId]) {
+      state.players[playerId].isPlaying = false; // Drop to lobby on refresh, DO NOT delete
     }
 
     const connectedSockets = await io.in(roomId).fetchSockets();
+    
     if (connectedSockets.length === 0) {
-      activeMatches.delete(roomId);
+      // 10-second grace period so the room isn't destroyed during a quick page refresh
+      setTimeout(async () => {
+        const checkSockets = await io.in(roomId).fetchSockets();
+        if (checkSockets.length === 0) {
+          activeMatches.delete(roomId);
+        }
+      }, 10000);
       return;
     }
 
@@ -380,13 +381,14 @@ io.on('connection', (socket) => {
     updateAndBroadcastPresence();
   });
 
-  socket.on('rejoin_game', (_payload = {}, callback) => {
+  socket.on('rejoin_game', (_payload, callback) => {
     const player = getPlayer(socket);
     const state = getGameState(socket);
     if (!player || !state || state.status !== 'PLAYING') return;
     
-    player.isPlaying = true; // Drop them back into the action
-    acknowledge(callback, { ok: true });
+    player.isPlaying = true;
+    player.isReady = true;
+    if (typeof callback === 'function') callback({ ok: true });
     broadcastGameState(socket.data.roomId);
     updateAndBroadcastPresence();
   });

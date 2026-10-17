@@ -54,6 +54,9 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
+  const [showRejoinModal, setShowRejoinModal] = useState(false);
+  const [hasDeclinedRejoin, setHasDeclinedRejoin] = useState(false);
+
   const players = useMemo(() => Object.values(gameState?.players ?? {}), [gameState?.players]);
   const localPlayer = players.find((player) => player.id === localPlayerId) ?? null;
   const hostId = gameState?.hostId ?? null;
@@ -84,6 +87,15 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   }, [incomingInvite]);
 
   useEffect(() => { if (localPlayer?.pendingRequests) setLocalPending(localPlayer.pendingRequests); }, [localPlayer?.pendingRequests]);
+
+  // --- DETECT ONGOING GAME FOR REJOIN POPUP ---
+  useEffect(() => {
+    if (gameState?.status === 'PLAYING' && localPlayer && !localPlayer.isPlaying && !hasDeclinedRejoin) {
+      setShowRejoinModal(true);
+    } else {
+      setShowRejoinModal(false);
+    }
+  }, [gameState?.status, localPlayer?.isPlaying, hasDeclinedRejoin]);
 
   useEffect(() => {
     if (!socket) return;
@@ -719,6 +731,40 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
         </div>
       )}
 
+      {/* --- REJOIN GAME MODAL --- */}
+      {showRejoinModal && (
+        <div className="modal-overlay" style={{ zIndex: 500 }}>
+          <section className="modal-content glass-panel" style={{ textAlign: 'center', padding: '32px' }}>
+            <h2 style={{ color: 'var(--text-plum)', marginTop: 0 }}>Match in Progress!</h2>
+            <p style={{ fontSize: '1.1rem', margin: '16px 0' }}>
+              A puzzle is currently active in this room.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '24px' }}>
+              <button 
+                type="button" 
+                className="primary-button" 
+                onClick={() => {
+                  socket.emit('rejoin_game');
+                  setShowRejoinModal(false);
+                }}
+              >
+                Jump Back In
+              </button>
+              <button 
+                type="button" 
+                className="secondary-button" 
+                onClick={() => {
+                  setHasDeclinedRejoin(true);
+                  setShowRejoinModal(false);
+                }}
+              >
+                Wait in Lobby
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      
     </main>
   );
 }
