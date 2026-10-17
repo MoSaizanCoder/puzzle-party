@@ -1,4 +1,9 @@
 let audioCtx = null;
+export let isSfxEnabled = true;
+
+export const toggleSfx = (enabled) => { 
+  isSfxEnabled = enabled; 
+};
 
 const getCtx = () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -8,6 +13,7 @@ const getCtx = () => {
 
 // Satisfying wooden "thwack/snap" for pieces connecting
 export const playSnapSound = () => {
+  if (!isSfxEnabled) return; // <-- ADD THIS
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -24,6 +30,7 @@ export const playSnapSound = () => {
 
 // Happy ascending chime for Streaks/Confetti
 export const playStreakSound = () => {
+  if (!isSfxEnabled) return; // <-- ADD THIS
   const ctx = getCtx();
   [0, 4, 7].forEach((note, i) => { 
     const osc = ctx.createOscillator();
@@ -42,6 +49,7 @@ export const playStreakSound = () => {
 
 // Sweeping sounds for power-ups (Ascending for buffs, Descending for attacks)
 export const playPowerUpSound = (isAttack = false) => {
+  if (!isSfxEnabled) return; // <-- ADD THIS
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();

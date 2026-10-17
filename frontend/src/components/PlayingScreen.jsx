@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import '../../styles/playing.css';
 import ConfettiBurst from './ConfettiBurst.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
-import { playStreakSound, playPowerUpSound } from '../utils/sounds.js';
+import { playStreakSound, playPowerUpSound, isSfxEnabled, toggleSfx } from '../utils/sounds.js';
 
 const powerCosts = {
   self_protect: 3,
@@ -62,6 +62,34 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   const cooldownUntil = gameState?.triviaCooldownUntil;
   const chatListRef = useRef(null);
   const previousStreaks = useRef(null);
+
+  // --- NEW: AUDIO & MUSIC STATE ---
+  const [sfxEnabled, setSfxEnabled] = useState(isSfxEnabled);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState(0);
+  const audioRef = useRef(null);
+
+  // Royalty-free placeholder playlist (You can replace these URLs with any direct .mp3 links)
+  const playlist = [
+    { name: 'Chill Groove', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+    { name: 'Upbeat Synth', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3' },
+    { name: 'Acoustic Breeze', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3' }
+  ];
+
+  const handleSfxToggle = () => {
+    const newVal = !sfxEnabled;
+    setSfxEnabled(newVal);
+    toggleSfx(newVal);
+  };
+
+  const nextTrack = () => setCurrentTrack((prev) => (prev + 1) % playlist.length);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      if (isMusicPlaying) audioRef.current.play().catch(() => setIsMusicPlaying(false));
+      else audioRef.current.pause();
+    }
+  }, [isMusicPlaying, currentTrack]);
 
   const [reverseTimeLeft, setReverseTimeLeft] = useState(5);
 
@@ -377,6 +405,54 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
           </button>
           <p className="power-up-notice" role="status">{notice || 'Spend your streak to activate a power.'}</p>
         </section>
+
+        <section className="audio-widget" aria-label="Audio Controls" style={{ background: 'rgba(253, 251, 247, 0.9)', border: '1px solid rgba(26, 35, 58, 0.12)', borderRadius: '12px', padding: '14px', boxShadow: '0 4px 16px rgba(26, 35, 58, 0.12)' }}>
+          <h2 style={{ margin: '0 0 12px', fontSize: '0.95rem' }}>Audio & Music</h2>
+          <div style={{ display: 'grid', gap: '12px', fontSize: '0.85rem' }}>
+            
+            {/* SFX Toggle */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Game Sound Effects</span>
+              <button type="button" className={sfxEnabled ? 'primary-button' : 'secondary-button'} onClick={handleSfxToggle} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
+                {sfxEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            
+            {/* Friends Voice Volume Slider */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Friends Voice Volume</span>
+              <input 
+                type="range" min="0" max="1" step="0.05" 
+                value={voiceVolume} 
+                onChange={(e) => setVoiceVolume(parseFloat(e.target.value))} 
+                style={{ width: '90px', accentColor: 'var(--shield-green)' }} 
+                title={`${Math.round(voiceVolume * 100)}%`}
+              />
+            </div>
+
+            {/* Music Player */}
+            <div style={{ borderTop: '1px solid rgba(26, 35, 58, 0.1)', paddingTop: '12px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span>Background Music</span>
+                <button type="button" className={isMusicPlaying ? 'primary-button' : 'secondary-button'} onClick={() => setIsMusicPlaying(!isMusicPlaying)} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
+                  {isMusicPlaying ? 'PLAY' : 'STOP'}
+                </button>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.6)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(26,35,58,0.08)' }}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px', fontWeight: 'bold', color: 'var(--text-plum)' }}>
+                  🎵 {playlist[currentTrack].name}
+                </span>
+                <button type="button" onClick={nextTrack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', padding: '0 4px' }} title="Next Track">
+                  ⏭️
+                </button>
+              </div>
+              <audio ref={audioRef} src={playlist[currentTrack].url} onEnded={nextTrack} loop={false} />
+            </div>
+
+          </div>
+        </section>
+
         <section className="chat-widget" aria-label="Text chat">
           <h2>Chat</h2>
           <ol className="chat-messages" ref={chatListRef} aria-live="polite">

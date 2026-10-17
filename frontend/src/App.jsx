@@ -46,6 +46,8 @@ export default function App() {
   const localPlayerId = typeof window === 'undefined' ? null : (session?.user?.id || window.sessionStorage.getItem('puzzle-party-player-id'));
   const localPlayer = gameState?.players?.[localPlayerId];
 
+  const [voiceVolume, setVoiceVolume] = useState(0.8);
+
   // --- 1. SUPABASE AUTH LISTENER ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -114,7 +116,8 @@ export default function App() {
     localPlayer?.id, 
     localPlayer?.isMicMuted ?? false, 
     localPlayer?.isSpeakerMuted ?? false,
-    playerCount // <-- Pass the player count
+    playerCount,
+    voiceVolume // <-- ADD THIS
   );
 
   // --- RENDERING ROUTER ---
@@ -174,6 +177,8 @@ export default function App() {
             onLeaveGame={() => setHasLeftGame(true)} 
             socket={socket} 
             localPlayerId={localPlayerId}
+            voiceVolume={voiceVolume}            // <-- ADD THIS
+            setVoiceVolume={setVoiceVolume}      // <-- ADD THIS
           />
           {status === 'HELP_PAUSED' && <PauseOverlay gameState={gameState} socket={socket} />}
           {status === 'GAMEOVER' && <GameOverScreen gameState={gameState} socket={socket} localPlayerId={localPlayerId} /> }
