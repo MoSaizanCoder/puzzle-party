@@ -3,7 +3,6 @@ import '../../styles/playing.css';
 import ConfettiBurst from './ConfettiBurst.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import { playStreakSound, playPowerUpSound, isSfxEnabled, toggleSfx } from '../utils/sounds.js';
-import ReactPlayer from 'react-player';
 
 const powerCosts = {
   self_protect: 3,
@@ -111,11 +110,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
 
   // --- NEW: AUDIO & MUSIC STATE ---
   const [sfxEnabled, setSfxEnabled] = useState(isSfxEnabled);
-  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
-  const [customMusicUrl, setCustomMusicUrl] = useState('');
-  const [activeMusicUrl, setActiveMusicUrl] = useState('');
-  const [syncTargetId, setSyncTargetId] = useState('');
-  const playerRef = useRef(null);
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
 
   const handleSfxToggle = () => {
     const newVal = !sfxEnabled;
@@ -170,45 +165,6 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       playStreakSound(); // <-- ADD THIS
     }
   }, [gameState?.players]);
-
-  // --- MUSIC SYNC LISTENER ---
-  useEffect(() => {
-    if (!socket) return;
-    
-    // 1. Someone asked to sync with YOU. Send them your current active URL.
-    const handleSyncReq = ({ requesterId }) => {
-      if (playerRef.current) {
-        socket.emit('send_music_sync', {
-          requesterId,
-          musicUrl: activeMusicUrl, // <-- Use activeMusicUrl
-          currentTime: playerRef.current.getCurrentTime(),
-          isPlaying: isMusicPlaying
-        });
-      }
-    };
-
-    // 2. You received the audio data from your friend. Apply it to your player.
-    const handleApplySync = ({ musicUrl, currentTime, isPlaying }) => {
-      setCustomMusicUrl(musicUrl);
-      setActiveMusicUrl(musicUrl); // <-- Set the active URL to trigger the player
-      setIsMusicPlaying(isPlaying);
-      
-      // Slight delay ensures the new YouTube iframe is loaded before seeking
-      setTimeout(() => {
-        if (playerRef.current) playerRef.current.seekTo(currentTime, 'seconds');
-      }, 500);
-      
-      setNotice('Music successfully synced!');
-    };
-
-    socket.on('music_sync_requested', handleSyncReq);
-    socket.on('apply_music_sync', handleApplySync);
-
-    return () => {
-      socket.off('music_sync_requested', handleSyncReq);
-      socket.off('apply_music_sync', handleApplySync);
-    };
-  }, [socket, activeMusicUrl, isMusicPlaying]); // <-- Update dependencies
 
   // --- NEW: Play Power-Up Sounds on Broadcast ---
   useEffect(() => {
@@ -308,6 +264,43 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
               </ul>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* Floating Reference Thumbnail */}
+      <div 
+        className="glass-panel"
+        style={{ 
+          position: 'absolute', bottom: '24px', left: '90px', zIndex: 40, width: '52px', height: '52px', 
+          borderRadius: '12px', border: '2px solid rgba(255,255,255,0.8)', cursor: 'pointer', 
+          backgroundImage: `url(${gameState?.puzzleImageSrc || '/puzzle-reference.svg'})`, 
+          backgroundSize: 'cover', backgroundPosition: 'center', boxShadow: '0 8px 24px rgba(26, 35, 58, 0.15)',
+          transition: 'transform 0.2s ease'
+        }}
+        onClick={() => setShowReferenceModal(true)}
+        title="View Reference Image"
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+      />
+
+      {/* Expanded Reference Modal */}
+      {showReferenceModal && (
+        <div className="modal-overlay" style={{ zIndex: 600 }} onClick={() => setShowReferenceModal(false)}>
+          <div style={{ position: 'relative', width: '85vw', height: '85vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <img 
+              src={gameState?.puzzleImageSrc || '/puzzle-reference.svg'} 
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 12px 48px rgba(0,0,0,0.6)' }} 
+              alt="Puzzle Reference" 
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button 
+              type="button" 
+              onClick={() => setShowReferenceModal(false)} 
+              style={{ position: 'absolute', top: '-16px', right: '-16px', width: '40px', height: '40px', borderRadius: '50%', background: 'var(--mute-red)', color: 'white', border: '2px solid white', fontSize: '1.4rem', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
@@ -503,85 +496,14 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
         </section>
 
         <section className="audio-widget" aria-label="Audio Controls" style={{ background: 'rgba(253, 251, 247, 0.9)', border: '1px solid rgba(26, 35, 58, 0.12)', borderRadius: '12px', padding: '14px', boxShadow: '0 4px 16px rgba(26, 35, 58, 0.12)' }}>
-          <h2 style={{ margin: '0 0 12px', fontSize: '0.95rem' }}>Audio & Music</h2>
+          <h2 style={{ margin: '0 0 12px', fontSize: '0.95rem' }}>Audio Settings</h2>
           <div style={{ display: 'grid', gap: '12px', fontSize: '0.85rem' }}>
-            
-            {/* SFX Toggle */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Game Sound Effects</span>
               <button type="button" className={sfxEnabled ? 'primary-button' : 'secondary-button'} onClick={handleSfxToggle} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
                 {sfxEnabled ? 'ON' : 'OFF'}
               </button>
             </div>
-
-            {/* Music Player & Sync */}
-            <div style={{ borderTop: '1px solid rgba(26, 35, 58, 0.1)', paddingTop: '12px', marginTop: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span>Background Music</span>
-                <button type="button" className={isMusicPlaying ? 'primary-button' : 'secondary-button'} onClick={() => setIsMusicPlaying(!isMusicPlaying)} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
-                  {isMusicPlaying ? 'PAUSE' : 'PLAY'}
-                </button>
-              </div>
-
-              {/* Custom URL Input */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                <input 
-                  type="url" 
-                  placeholder="Paste YouTube or SoundCloud link..." 
-                  value={customMusicUrl} 
-                  onChange={(e) => setCustomMusicUrl(e.target.value)} 
-                  style={{ flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(26,35,58,0.2)', fontSize: '0.75rem', minWidth: 0 }}
-                />
-                <button 
-                  type="button" 
-                  className="primary-button" 
-                  disabled={!customMusicUrl.trim()}
-                  onClick={() => {
-                    setActiveMusicUrl(customMusicUrl); // <-- Move the URL into the player only on click
-                    setIsMusicPlaying(true);
-                  }}
-                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                >
-                  Load
-                </button>
-              </div>
-
-              {/* Sync Controls */}
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(255,255,255,0.6)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(26,35,58,0.08)' }}>
-                <select 
-                  value={syncTargetId} 
-                  onChange={(e) => setSyncTargetId(e.target.value)}
-                  style={{ flex: 1, padding: '4px 6px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid rgba(26,35,58,0.1)' }}
-                >
-                  <option value="">Sync to player...</option>
-                  {targets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <button 
-                  type="button" 
-                  className="secondary-button" 
-                  disabled={!syncTargetId || !socket?.connected}
-                  onClick={() => socket.emit('request_music_sync', { targetId: syncTargetId })}
-                  style={{ padding: '4px 10px', fontSize: '0.7rem', fontWeight: 'bold' }}
-                >
-                  Sync
-                </button>
-              </div>
-              
-              {/* Push the player off-screen so YouTube's visibility checks pass, but it remains unseen */}
-              <div style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '300px', height: '300px', pointerEvents: 'none', zIndex: -10 }}>
-                <ReactPlayer 
-                  ref={playerRef}
-                  url={activeMusicUrl} // <-- Now it uses the safe, isolated URL
-                  playing={isMusicPlaying}
-                  loop={true}
-                  width="100%"
-                  height="100%"
-                  volume={0.4}
-                  config={{ youtube: { playerVars: { origin: typeof window !== 'undefined' ? window.location.origin : '' } } }}
-                />
-              </div>
-            </div>
-
           </div>
         </section>
 

@@ -342,6 +342,12 @@ io.on('connection', (socket) => {
       stats: { highestStreak: 0, attacksUsed: 0, pointsStolen: 0 },
       lifetimeStats: dbStats || { games_played: 0, total_wins: 0, highest_streak: 0, attacks_used: 0, points_stolen: 0, total_score: 0 }
     };
+    
+    // Force reconnecting players seamlessly back into the active board
+    if (state.status !== 'LOBBY' && state.players[playerId]) {
+      state.players[playerId].isPlaying = true;
+      state.players[playerId].isReady = true;
+    }
 
     if (!state.hostId || !state.players[state.hostId]) state.hostId = playerId;
     io.to(roomId).emit('game_state', getLightweightState(state));
@@ -357,17 +363,13 @@ io.on('connection', (socket) => {
 
     const wasHost = state.hostId === playerId;
     
-    // Only delete their profile completely if they disconnect from the Lobby
+    // If the game hasn't started, delete them.
+    // If mid-game, keep their data so they instantly auto-rejoin on refresh.
     if (state.status === 'LOBBY') {
       delete state.players[playerId];
-    } else if (state.players[playerId]) {
-      // If mid-game, just mark them as inactive so they trigger the Rejoin popup
-      state.players[playerId].isPlaying = false;
     }
 
     const connectedSockets = await io.in(roomId).fetchSockets();
-    
-    // Clean up the room only if ZERO active websockets remain
     if (connectedSockets.length === 0) {
       activeMatches.delete(roomId);
       return;
