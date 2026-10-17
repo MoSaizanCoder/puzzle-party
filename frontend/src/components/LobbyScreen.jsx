@@ -2,12 +2,21 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient.js';
 import '../../styles/lobby.css';
 
-const imageOptions = [
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
-];
+const puzzleCategories = {
+  "Nostalgia & Cartoons": [
+    'https://wallpapercave.com/wp/wp3723778.jpg',
+    'https://m.media-amazon.com/images/M/MV5BNzg4MTE2OGItYTI1ZC00YjI2LTg2Y2QtYmVlNmY1MjMyYWVhXkEyXkFqcGc@._V1_.jpg',
+    'https://m.media-amazon.com/images/M/MV5BMGM5M2M0YmQtOTkxMi00M2VjLTg0YjktYTI2N2VmNDI5ZGJiXkEyXkFqcGc@._V1_FMjpg_UX480_.jpg',
+    'https://m.media-amazon.com/images/I/81Bivc7COzL._AC_SL3840_.jpg',
+    'https://i5.walmartimages.com/seo/BINFA-Wall-Art-Anime-Demon-Slayer-12-x-18-Poster_ce806e28-602d-4ab7-8796-54679b1c2a9d.97621baf603439ea3edb65f0b3063c34.jpeg'
+  ],
+  "Classic Scenery": [
+    'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
+  ]
+};
 
 function VoiceControl({ icon, label, muted, interactive, onToggle }) {
   const iconClassName = `voice-icon${muted ? ' is-muted' : ''}`;
@@ -32,6 +41,7 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
   const [viewingFriendStats, setViewingFriendStats] = useState(null);
+  const [customUrl, setCustomUrl] = useState('');
   
   // --- NEW: INCOMING INVITE STATE ---
   const [incomingInvite, setIncomingInvite] = useState(null);
@@ -624,13 +634,44 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
               <h2>Choose a Puzzle Image</h2>
               <button type="button" className="close-modal" onClick={() => setShowImageModal(false)}>×</button>
             </div>
-            <div style={{ marginBottom: '16px' }}>
-              <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
-              <button type="button" className="primary-button" style={{ width: '100%', padding: '12px' }} onClick={() => fileInputRef.current?.click()}>📸 Upload Custom Image</button>
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
+              <input 
+                type="url" 
+                placeholder="Paste any image URL here..." 
+                value={customUrl} 
+                onChange={(e) => setCustomUrl(e.target.value)} 
+                style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(26,35,58,0.2)', font: 'inherit' }}
+              />
+              <button 
+                type="button" 
+                className="primary-button" 
+                disabled={!customUrl.trim() || !socket?.connected}
+                onClick={() => { handleSelectImage(customUrl); setCustomUrl(''); }}
+                style={{ padding: '10px 20px' }}
+              >
+                Load URL
+              </button>
             </div>
-            <div className="image-grid">
-              {imageOptions.map((url) => (
-                <button key={url} type="button" className="image-card" onClick={() => handleSelectImage(url)}><img src={url} alt="Puzzle option" /></button>
+
+            <div style={{ marginBottom: '20px' }}>
+              <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
+              <button type="button" className="secondary-button" style={{ width: '100%', padding: '10px' }} onClick={() => fileInputRef.current?.click()}>
+                📸 Or Upload File from Device
+              </button>
+            </div>
+
+            <div className="image-grid-container" style={{ maxHeight: '45vh', overflowY: 'auto', paddingRight: '8px' }}>
+              {Object.entries(puzzleCategories).map(([category, urls]) => (
+                <div key={category} style={{ marginBottom: '24px' }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '1rem', color: 'var(--text-plum)' }}>{category}</h3>
+                  <div className="image-grid">
+                    {urls.map((url) => (
+                      <button key={url} type="button" className="image-card" onClick={() => handleSelectImage(url)}>
+                        <img src={url} alt={`${category} puzzle option`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
