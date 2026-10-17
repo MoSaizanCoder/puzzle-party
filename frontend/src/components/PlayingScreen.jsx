@@ -114,30 +114,13 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [customMusicUrl, setCustomMusicUrl] = useState('');
   const [syncTargetId, setSyncTargetId] = useState('');
-  const [currentTrack, setCurrentTrack] = useState(0);
   const playerRef = useRef(null);
-
-  // Royalty-free placeholder playlist (You can replace these URLs with any direct .mp3 links)
-  const playlist = [
-    { name: 'Chill Groove', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-    { name: 'Upbeat Synth', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3' },
-    { name: 'Acoustic Breeze', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3' }
-  ];
 
   const handleSfxToggle = () => {
     const newVal = !sfxEnabled;
     setSfxEnabled(newVal);
     toggleSfx(newVal);
   };
-
-  const nextTrack = () => setCurrentTrack((prev) => (prev + 1) % playlist.length);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      if (isMusicPlaying) audioRef.current.play().catch(() => setIsMusicPlaying(false));
-      else audioRef.current.pause();
-    }
-  }, [isMusicPlaying, currentTrack]);
 
   const [reverseTimeLeft, setReverseTimeLeft] = useState(5);
 
