@@ -243,7 +243,10 @@ function applyFocusCracker(roomId, attacker) {
   return { shieldChanged, reversed };
 }
 
-const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173' } });
+const io = new Server(httpServer, { 
+  cors: { origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173' },
+  maxHttpBufferSize: 1e7 // Increases the payload limit to 10MB
+});
 
 io.on('connection', (socket) => {
   socket.on('join_game', async ({ playerId, name, roomId } = {}) => {
@@ -433,8 +436,14 @@ io.on('connection', (socket) => {
     const player = getPlayer(socket); const state = getGameState(socket);
     if (!player || !state) { acknowledge(callback, { ok: false, message: 'Join the lobby before selecting an image.' }); return; }
     if (state.hostId !== player.id) { acknowledge(callback, { ok: false, message: 'Only the host can select an image.' }); return; }
-    if (typeof imageUrl !== 'string' || !imageUrl.trim()) { acknowledge(callback, { ok: false, message: 'Choose a valid image URL.' }); return; }
-    state.puzzleImageSrc = imageUrl.trim();
+    
+    if (imageUrl === null) {
+      state.puzzleImageSrc = null;
+    } else {
+      if (typeof imageUrl !== 'string' || !imageUrl.trim()) { acknowledge(callback, { ok: false, message: 'Choose a valid image URL.' }); return; }
+      state.puzzleImageSrc = imageUrl.trim();
+    }
+    
     acknowledge(callback, { ok: true, imageUrl: state.puzzleImageSrc });
     broadcastGameState(socket.data.roomId);
   });

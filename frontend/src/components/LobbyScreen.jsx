@@ -112,8 +112,12 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
     const file = event.target.files?.[0];
     if (!file || !socket?.connected) return;
     const reader = new FileReader();
-    reader.onload = (e) => { socket.emit('select_image', { imageUrl: e.target.result }); setShowImageModal(false); };
+    reader.onload = (e) => { 
+      socket.emit('select_image', { imageUrl: e.target.result }); 
+      setShowImageModal(false); 
+    };
     reader.readAsDataURL(file);
+    event.target.value = null; // Resets the input so the same file can be selected again
   };
 
   const copyCode = async (text) => {
@@ -282,7 +286,22 @@ export default function LobbyScreen({ gameState, socket, localPlayerId }) {
           <div className="lobby-right-column">
             {selectedPuzzleImage ? (
               <div className="lobby-preview-card">
-                <div className="lobby-preview-header"><span className="profile-label">Selected Puzzle</span><span className="lobby-preview-badge">{isHost ? 'Host pick' : 'Match image'}</span></div>
+                <div className="lobby-preview-header">
+                  <span className="profile-label">Selected Puzzle</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span className="lobby-preview-badge">{isHost ? 'Host pick' : 'Match image'}</span>
+                    {isHost && (
+                      <button 
+                        type="button" 
+                        onClick={() => socket.emit('select_image', { imageUrl: null })}
+                        style={{ background: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        title="Remove custom image"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <img src={selectedPuzzleImage} alt="Selected puzzle preview" className="lobby-preview-image" />
               </div>
             ) : (
