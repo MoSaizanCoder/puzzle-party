@@ -3,6 +3,7 @@ import '../../styles/playing.css';
 import ConfettiBurst from './ConfettiBurst.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import { playStreakSound, playPowerUpSound, isSfxEnabled, toggleSfx } from '../utils/sounds.js';
+import ReactPlayer from 'react-player';
 
 const powerCosts = {
   self_protect: 3,
@@ -114,7 +115,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   const [customMusicUrl, setCustomMusicUrl] = useState('');
   const [syncTargetId, setSyncTargetId] = useState('');
   const [currentTrack, setCurrentTrack] = useState(0);
-  const audioRef = useRef(null);
+  const playerRef = useRef(null);
 
   // Royalty-free placeholder playlist (You can replace these URLs with any direct .mp3 links)
   const playlist = [
@@ -190,30 +191,29 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
   useEffect(() => {
     if (!socket) return;
     
-    // 1. Someone asked to sync with YOU. Send them your current audio data.
+    // 1. Someone asked to sync with YOU. Send them your current URL and timestamp.
     const handleSyncReq = ({ requesterId }) => {
-      if (audioRef.current) {
+      if (playerRef.current) {
         socket.emit('send_music_sync', {
           requesterId,
-          musicUrl: audioRef.current.src,
-          currentTime: audioRef.current.currentTime,
-          isPlaying: !audioRef.current.paused
+          musicUrl: customMusicUrl,
+          currentTime: playerRef.current.getCurrentTime(),
+          isPlaying: isMusicPlaying
         });
       }
     };
 
     // 2. You received the audio data from your friend. Apply it to your player.
     const handleApplySync = ({ musicUrl, currentTime, isPlaying }) => {
-      if (audioRef.current) {
-        setCustomMusicUrl(musicUrl);
-        audioRef.current.src = musicUrl;
-        audioRef.current.currentTime = currentTime;
-        setIsMusicPlaying(isPlaying);
-        if (isPlaying) {
-          audioRef.current.play().catch(e => console.error("Autoplay blocked:", e));
-        }
-        setNotice('Music successfully synced!');
-      }
+      setCustomMusicUrl(musicUrl);
+      setIsMusicPlaying(isPlaying);
+      
+      // Slight delay ensures the new YouTube iframe is loaded before seeking
+      setTimeout(() => {
+        if (playerRef.current) playerRef.current.seekTo(currentTime, 'seconds');
+      }, 500);
+      
+      setNotice('Music successfully synced!');
     };
 
     socket.on('music_sync_requested', handleSyncReq);
@@ -223,7 +223,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
       socket.off('music_sync_requested', handleSyncReq);
       socket.off('apply_music_sync', handleApplySync);
     };
-  }, [socket]);
+  }, [socket, customMusicUrl, isMusicPlaying]);
 
   // --- NEW: Play Power-Up Sounds on Broadcast ---
   useEffect(() => {
@@ -542,7 +542,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
               <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
                 <input 
                   type="url" 
-                  placeholder="Paste direct .mp3 URL..." 
+                  placeholder="Paste YouTube or SoundCloud link..." 
                   value={customMusicUrl} 
                   onChange={(e) => setCustomMusicUrl(e.target.value)} 
                   style={{ flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(26,35,58,0.2)', fontSize: '0.75rem', minWidth: 0 }}
@@ -551,13 +551,7 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                   type="button" 
                   className="primary-button" 
                   disabled={!customMusicUrl.trim()}
-                  onClick={() => { 
-                    if(audioRef.current) { 
-                      audioRef.current.src = customMusicUrl; 
-                      audioRef.current.play().catch(console.error); 
-                      setIsMusicPlaying(true); 
-                    } 
-                  }}
+                  onClick={() => setIsMusicPlaying(true)}
                   style={{ padding: '6px 10px', fontSize: '0.75rem' }}
                 >
                   Load
@@ -585,7 +579,16 @@ export default function PlayingScreen({ gameState, onGameState, onLeaveGame, soc
                 </button>
               </div>
               
-              <audio ref={audioRef} loop={true} />
+              <ReactPlayer 
+                ref={playerRef}
+                url={customMusicUrl}
+                playing={isMusicPlaying}
+                loop={true}
+                width="0"
+                height="0"
+                volume={0.4}
+                config={{ youtube: { playerVars: { origin: typeof window !== 'undefined' ? window.location.origin : '' } } }}
+              />
             </div>
 
           </div>
