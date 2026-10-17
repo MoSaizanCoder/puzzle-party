@@ -252,13 +252,30 @@ io.on('connection', (socket) => {
   socket.on('join_game', async ({ playerId, name, roomId } = {}) => {
     if (typeof playerId !== 'string' || !roomId) return;
 
-    // 1. SECURE THE NEW CONNECTION FIRST
+    // 1. CLEAN UP GHOSTS IN OTHER ROOMS
+    // If they changed rooms, forcefully wipe them from the old room so they don't get stuck "In Game"
+    for (const [existingRoomId, existingState] of activeMatches.entries()) {
+      if (existingRoomId !== roomId && existingState.players[playerId]) {
+        const wasHost = existingState.hostId === playerId;
+        delete existingState.players[playerId];
+        
+        const activePlayers = Object.keys(existingState.players);
+        if (activePlayers.length === 0) {
+           activeMatches.delete(existingRoomId);
+        } else {
+           if (wasHost) reassignHostIfNeeded(existingRoomId);
+           broadcastGameState(existingRoomId);
+        }
+      }
+    }
+
+    // 2. SECURE THE NEW CONNECTION
     socket.data.playerId = playerId;
     socket.data.roomId = roomId;
     socket.join(playerId); 
     socket.join(roomId);   
 
-    // 2. CLEAN UP OLD GHOST TABS
+    // 3. CLEAN UP OLD SOCKETS IN THIS EXACT ROOM
     const existingSockets = await io.in(playerId).fetchSockets();
     const ghostSockets = existingSockets.filter(s => s.id !== socket.id);
     if (ghostSockets.length > 0) {
